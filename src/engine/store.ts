@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -52,6 +53,34 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX events_user_kind ON events (user_id, kind);
   `,
+  // S1.2: bot access, conversation state, documents, dossier grants, inbound aliases, card button keys.
+  `
+  CREATE TABLE invites (code_hash TEXT PRIMARY KEY, created_at TEXT NOT NULL, used_by TEXT, used_at TEXT);
+  CREATE TABLE bot_state (user_id TEXT PRIMARY KEY REFERENCES users(id), json TEXT NOT NULL);
+  CREATE TABLE documents (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    label TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    file_name TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX documents_user ON documents (user_id);
+  CREATE TABLE grants (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    doc_ids TEXT NOT NULL,
+    token_enc TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    revoked INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX grants_user ON grants (user_id);
+  CREATE TABLE inbound_aliases (alias_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE REFERENCES users(id), created_at TEXT NOT NULL);
+  CREATE TABLE listing_keys (key TEXT PRIMARY KEY, user_id TEXT NOT NULL, listing_id TEXT NOT NULL, created_at TEXT NOT NULL);
+  CREATE UNIQUE INDEX listing_keys_owner ON listing_keys (user_id, listing_id);
+  `,
 ];
 
 export function dbPath(env: Record<string, string | undefined> = process.env): string {
@@ -76,6 +105,28 @@ export interface Usage {
   median_seconds_to_card: number | "not_enough_data";
 }
 
+export interface DocumentRow {
+  id: string;
+  userId: string;
+  label: string;
+  mime: string;
+  size: number;
+  /** Random name of the encrypted file inside the files directory. */
+  fileName: string;
+  createdAt: string;
+}
+
+export interface GrantRow {
+  tokenHash: string;
+  userId: string;
+  docIds: string[];
+  /** The token sealed with the files key, so a draft can carry the link. Opaque to the store. */
+  tokenEnc: string;
+  createdAt: string;
+  expiresAt: string;
+  revoked: boolean;
+}
+
 export interface Store {
   upsertUser(userId: string, telegramId?: string): void;
   setProfile(profile: Profile): void;
@@ -93,6 +144,39 @@ export interface Store {
   /** Everything stored for one renter (the /delete command). */
   deleteUser(userId: string): void;
   usage(): Usage;
+
+  // --- Bot access (S1.2). Invite codes are stored as hashes; the code itself is shown once. ---
+  createInvite(codeHash: string, at?: string): void;
+  /** Single use: true when the code existed and was unused, and the Telegram user is now linked. */
+  redeemInvite(codeHash: string, telegramId: string, at?: string): boolean;
+  /** A user row with a linked Telegram id exists. */
+  isLinked(userId: string): boolean;
+  getState(userId: string): unknown | undefined;
+  setState(userId: string, state: unknown): void;
+
+  // --- Documents and dossier grants ---
+  addDocument(doc: Omit<DocumentRow, "createdAt"> & { createdAt?: string }): void;
+  listDocuments(userId: string): DocumentRow[];
+  /** Null unless the document belongs to this renter. */
+  getDocument(userId: string, id: string): DocumentRow | undefined;
+  /** Removes the row (and the id from every grant's scope) and returns it, so the caller can remove the file. */
+  removeDocument(userId: string, id: string): DocumentRow | undefined;
+  createGrant(g: Omit<GrantRow, "createdAt" | "revoked"> & { createdAt?: string }): void;
+  getGrantByHash(tokenHash: string): GrantRow | undefined;
+  /** The newest grant that is neither revoked nor expired at `now`. */
+  latestActiveGrant(userId: string, now: Date): GrantRow | undefined;
+  /** Revokes every grant of the renter; returns how many were still active. */
+  revokeGrants(userId: string, now: Date): number;
+
+  // --- Inbound email aliases: one per renter, stored hashed ---
+  setInboundAlias(userId: string, aliasHash: string): void;
+  hasInboundAlias(userId: string): boolean;
+  userForAliasHash(aliasHash: string): string | undefined;
+
+  // --- Opaque keys for card buttons: the key maps to (renter, listing) and nothing else ---
+  listingKey(userId: string, listingId: string): string;
+  resolveListingKey(key: string): { userId: string; listingId: string } | undefined;
+
   close(): void;
 }
 
@@ -127,6 +211,16 @@ export function openStore(path: string = dbPath()): Store {
     insertEvent: db.prepare("INSERT INTO events (user_id, listing_id, kind, at, received_at) VALUES (?, ?, ?, ?, ?)"),
     events: db.prepare("SELECT user_id, listing_id, kind, at, received_at FROM events WHERE user_id = ? AND (? IS NULL OR kind = ?) ORDER BY n"),
   };
+
+  const nowIso = () => new Date().toISOString();
+  const docFrom = (r: { id: string; user_id: string; label: string; mime: string; size: number; file_name: string; created_at: string }): DocumentRow => ({
+    id: r.id, userId: r.user_id, label: r.label, mime: r.mime, size: r.size, fileName: r.file_name, createdAt: r.created_at,
+  });
+  type GrantSql = { token_hash: string; user_id: string; doc_ids: string; token_enc: string; created_at: string; expires_at: string; revoked: number };
+  const grantFrom = (r: GrantSql): GrantRow => ({
+    tokenHash: r.token_hash, userId: r.user_id, docIds: JSON.parse(r.doc_ids) as string[], tokenEnc: r.token_enc,
+    createdAt: r.created_at, expiresAt: r.expires_at, revoked: r.revoked === 1,
+  });
 
   const ensureUser = (userId: string) => q.upsertUser.run(userId, null, new Date().toISOString());
 
@@ -192,6 +286,7 @@ export function openStore(path: string = dbPath()): Store {
       db.exec("BEGIN");
       try {
         db.prepare("DELETE FROM occurrences WHERE (user_id, listing_id) IN (SELECT user_id, id FROM listings WHERE first_seen_at < ?)").run(cutoff);
+        db.prepare("DELETE FROM listing_keys WHERE (user_id, listing_id) IN (SELECT user_id, id FROM listings WHERE first_seen_at < ?)").run(cutoff);
         const r = db.prepare("DELETE FROM listings WHERE first_seen_at < ?").run(cutoff);
         db.exec("COMMIT");
         return Number(r.changes);
@@ -203,8 +298,12 @@ export function openStore(path: string = dbPath()): Store {
     deleteUser(userId) {
       db.exec("BEGIN");
       try {
-        for (const t of ["events", "occurrences"]) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(userId);
+        for (const t of ["events", "occurrences", "listing_keys", "grants", "documents", "inbound_aliases", "bot_state"]) {
+          db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(userId);
+        }
         for (const t of ["listings", "filters", "profiles"]) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(userId);
+        // The invite row stays (a used code stays used) but no longer names the renter.
+        db.prepare("UPDATE invites SET used_by = NULL WHERE used_by = ?").run(userId);
         db.prepare("DELETE FROM users WHERE id = ?").run(userId);
         db.exec("COMMIT");
       } catch (err) {
@@ -228,6 +327,104 @@ export function openStore(path: string = dbPath()): Store {
         viewings: count("SELECT COUNT(*) AS c FROM events WHERE kind = 'viewing'"),
         median_seconds_to_card: median,
       };
+    },
+    createInvite(codeHash, at) {
+      db.prepare("INSERT INTO invites (code_hash, created_at) VALUES (?, ?)").run(codeHash, at ?? nowIso());
+    },
+    redeemInvite(codeHash, telegramId, at) {
+      db.exec("BEGIN");
+      try {
+        const r = db.prepare("UPDATE invites SET used_by = ?, used_at = ? WHERE code_hash = ? AND used_by IS NULL").run(telegramId, at ?? nowIso(), codeHash);
+        if (Number(r.changes) !== 1) {
+          db.exec("ROLLBACK");
+          return false;
+        }
+        q.upsertUser.run(telegramId, telegramId, nowIso());
+        db.exec("COMMIT");
+        return true;
+      } catch (err) {
+        db.exec("ROLLBACK");
+        throw err;
+      }
+    },
+    isLinked(userId) {
+      return db.prepare("SELECT 1 FROM users WHERE id = ? AND telegram_id IS NOT NULL").get(userId) !== undefined;
+    },
+    getState(userId) {
+      const row = db.prepare("SELECT json FROM bot_state WHERE user_id = ?").get(userId) as { json: string } | undefined;
+      return row ? JSON.parse(row.json) : undefined;
+    },
+    setState(userId, state) {
+      ensureUser(userId);
+      db.prepare("INSERT INTO bot_state (user_id, json) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET json = excluded.json").run(userId, JSON.stringify(state));
+    },
+    addDocument(d) {
+      ensureUser(d.userId);
+      db.prepare("INSERT INTO documents (id, user_id, label, mime, size, file_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(d.id, d.userId, d.label, d.mime, d.size, d.fileName, d.createdAt ?? nowIso());
+    },
+    listDocuments(userId) {
+      return (db.prepare("SELECT * FROM documents WHERE user_id = ? ORDER BY created_at, rowid").all(userId) as Parameters<typeof docFrom>[0][]).map(docFrom);
+    },
+    getDocument(userId, id) {
+      const r = db.prepare("SELECT * FROM documents WHERE user_id = ? AND id = ?").get(userId, id) as Parameters<typeof docFrom>[0] | undefined;
+      return r ? docFrom(r) : undefined;
+    },
+    removeDocument(userId, id) {
+      const r = db.prepare("SELECT * FROM documents WHERE user_id = ? AND id = ?").get(userId, id) as Parameters<typeof docFrom>[0] | undefined;
+      if (!r) return undefined;
+      db.exec("BEGIN");
+      try {
+        db.prepare("DELETE FROM documents WHERE user_id = ? AND id = ?").run(userId, id);
+        const grants = db.prepare("SELECT token_hash, doc_ids FROM grants WHERE user_id = ?").all(userId) as Array<{ token_hash: string; doc_ids: string }>;
+        for (const g of grants) {
+          const ids = (JSON.parse(g.doc_ids) as string[]).filter((x) => x !== id);
+          db.prepare("UPDATE grants SET doc_ids = ? WHERE token_hash = ?").run(JSON.stringify(ids), g.token_hash);
+        }
+        db.exec("COMMIT");
+      } catch (err) {
+        db.exec("ROLLBACK");
+        throw err;
+      }
+      return docFrom(r);
+    },
+    createGrant(g) {
+      ensureUser(g.userId);
+      db.prepare("INSERT INTO grants (token_hash, user_id, doc_ids, token_enc, created_at, expires_at, revoked) VALUES (?, ?, ?, ?, ?, ?, 0)").run(g.tokenHash, g.userId, JSON.stringify(g.docIds), g.tokenEnc, g.createdAt ?? nowIso(), g.expiresAt);
+    },
+    getGrantByHash(tokenHash) {
+      const r = db.prepare("SELECT * FROM grants WHERE token_hash = ?").get(tokenHash) as GrantSql | undefined;
+      return r ? grantFrom(r) : undefined;
+    },
+    latestActiveGrant(userId, now) {
+      const r = db.prepare("SELECT * FROM grants WHERE user_id = ? AND revoked = 0 AND expires_at > ? ORDER BY created_at DESC, rowid DESC LIMIT 1").get(userId, now.toISOString()) as GrantSql | undefined;
+      return r ? grantFrom(r) : undefined;
+    },
+    revokeGrants(userId, now) {
+      const r = db.prepare("UPDATE grants SET revoked = 1 WHERE user_id = ? AND revoked = 0 AND expires_at > ?").run(userId, now.toISOString());
+      db.prepare("UPDATE grants SET revoked = 1 WHERE user_id = ?").run(userId);
+      return Number(r.changes);
+    },
+    setInboundAlias(userId, aliasHash) {
+      ensureUser(userId);
+      db.prepare("INSERT INTO inbound_aliases (alias_hash, user_id, created_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET alias_hash = excluded.alias_hash, created_at = excluded.created_at").run(aliasHash, userId, nowIso());
+    },
+    hasInboundAlias(userId) {
+      return db.prepare("SELECT 1 FROM inbound_aliases WHERE user_id = ?").get(userId) !== undefined;
+    },
+    userForAliasHash(aliasHash) {
+      const r = db.prepare("SELECT user_id FROM inbound_aliases WHERE alias_hash = ?").get(aliasHash) as { user_id: string } | undefined;
+      return r?.user_id;
+    },
+    listingKey(userId, listingId) {
+      const row = db.prepare("SELECT key FROM listing_keys WHERE user_id = ? AND listing_id = ?").get(userId, listingId) as { key: string } | undefined;
+      if (row) return row.key;
+      const key = randomBytes(9).toString("base64url");
+      db.prepare("INSERT INTO listing_keys (key, user_id, listing_id, created_at) VALUES (?, ?, ?, ?)").run(key, userId, listingId, nowIso());
+      return key;
+    },
+    resolveListingKey(key) {
+      const r = db.prepare("SELECT user_id, listing_id FROM listing_keys WHERE key = ?").get(key) as { user_id: string; listing_id: string } | undefined;
+      return r ? { userId: r.user_id, listingId: r.listing_id } : undefined;
     },
     close() {
       db.close();
