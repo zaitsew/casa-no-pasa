@@ -65,3 +65,14 @@ describe("handleInput, AI off", () => {
     expect(card!.assessment.unknowns.some((u) => u.startsWith("only a link"))).toBe(true);
   });
 });
+
+describe("handleInput, enrichment", () => {
+  it("a bare link and then the ad gives a full card flagged enriched", async () => {
+    const [bare] = await engine.handleInput("u1", text("https://www.idealista.com/inmueble/22222222/"));
+    expect(bare!.listing.priceEur).toBeUndefined();
+    const [full] = await engine.handleInput("u1", text("https://www.idealista.com/inmueble/22222222/ Piso en Gràcia, Barcelona, 75 m², 1.100 €/mes"));
+    expect(full).toMatchObject({ duplicate: false, enriched: true });
+    expect(full!.listing).toMatchObject({ priceEur: 1100, areaM2: 75 });
+    expect(engine.store.events("u1", "card_shown")).toHaveLength(2);
+  });
+});

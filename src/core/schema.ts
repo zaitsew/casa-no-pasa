@@ -71,21 +71,21 @@ export type Listing = z.infer<typeof ListingSchema>;
 /** The renter. Only facts the renter typed; nothing inferred. */
 export const ProfileSchema = z.object({
   userId: z.string(),
-  name: z.string().min(1),
+  name: z.string().min(1).max(100),
   /** One line, e.g. "Product manager at a software company, permanent contract". */
-  occupation: z.string().optional(),
+  occupation: z.string().max(200).optional(),
   contract: z.enum(["permanent", "temporary", "self-employed", "student", "other"]).optional(),
   netMonthlyIncomeEur: z.number().int().positive().optional(),
   occupants: z.number().int().positive().default(1),
-  occupantsNote: z.string().optional(),
-  pets: z.string().optional(),
-  moveInFrom: z.string().optional(),
+  occupantsNote: z.string().max(200).optional(),
+  pets: z.string().max(150).optional(),
+  moveInFrom: z.string().max(80).optional(),
   stayMonthsMin: z.number().int().positive().optional(),
   /** Free text the renter wants in every reply, e.g. "non-smoker, quiet, references from my last landlord". */
   pitch: z.string().max(400).optional(),
   /** Viewing availability as the renter would say it, e.g. "weekdays after 18:00, any time Saturday". */
   availability: z.string().max(200).optional(),
-  phone: z.string().optional(),
+  phone: z.string().max(40).optional(),
   replyLang: LangSchema.default("es"),
 });
 export type Profile = z.infer<typeof ProfileSchema>;

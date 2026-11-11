@@ -119,3 +119,51 @@ describe("model pass", () => {
     expect(acceptModelFields({ priceEur: "x" }, "t", false)).toBeNull();
   });
 });
+
+describe("review fixes", () => {
+  const hubAnswer = (args: unknown) =>
+    new Response(JSON.stringify({ choices: [{ message: { tool_calls: [{ function: { name: "set_listing_fields", arguments: JSON.stringify(args) } }] } }] }), { status: 200 });
+  const env = { ACCOUNTS_URL: "https://hub.invalid", ACCOUNTS_SERVICE_CASANOPASA: "tok" };
+  const image = { kind: "image" as const, text: "", imageBase64: "AAAA", imageMime: "image/png" as const, receivedAt: NOW };
+
+  it("image evidence is accepted as the model quoted it, capped at 200 characters", () => {
+    const long = "x".repeat(500);
+    const r = acceptModelFields({ priceEur: 1300, rooms: 2, evidence: { priceEur: "1.300 €/mes", rooms: long } }, "", true)!;
+    expect(r.fields).toMatchObject({ priceEur: 1300, rooms: 2 });
+    expect(r.evidence.priceEur).toBe("1.300 €/mes");
+    expect(r.evidence.rooms).toHaveLength(200);
+    expect(acceptModelFields({ priceEur: 1300, evidence: { priceEur: "1.300 €/mes" } }, "", false)!.fields).toEqual({});
+  });
+
+  it("screenshot text reaches the description, but never replaces an ad text", async () => {
+    const fetchFn = (async () => hubAnswer({ priceEur: 1300, ocrText: "Alquiler de temporada, 1.300 €/mes", evidence: { priceEur: "1.300 €/mes" } })) as unknown as typeof fetch;
+    const [l] = await extract(image, "u1", { env, fetch: fetchFn });
+    expect(l!.description).toBe("Alquiler de temporada, 1.300 €/mes");
+    const textFetch = (async () => hubAnswer({ ocrText: "ignored", evidence: {} })) as unknown as typeof fetch;
+    const [t] = await extract(text("Piso en Gràcia, 900 €/mes"), "u1", { env, fetch: textFetch });
+    expect(t!.description).toBe("Piso en Gràcia, 900 €/mes");
+    expect(acceptModelFields({ ocrText: "z".repeat(5000), evidence: {} }, "", true)!.ocrText).toHaveLength(3000);
+  });
+
+  it("reads thousands separators and decimals", () => {
+    const cases: Array<[string, number]> = [
+      ["1,250 EUR/month", 1250], ["1.250 €", 1250], ["1 250 €/mes", 1250], ["€1,250.00 / month", 1250], ["1.250,00 euros al mes", 1250],
+      ["Precio 950,00 €", 950], ["1,250 euros", 1250], ["1250 € al mes", 1250], ["€ 12.500", 12500],
+    ];
+    for (const [t, n] of cases) expect(findPrice(t)?.priceEur, t).toBe(n);
+    expect(findPrice("1,250 EUR/month")?.evidence).toBe("1,250 EUR/month");
+    expect(findPrice("1250 euros al mes")?.priceEur).toBe(1250);
+    expect(findPrice("rent 1,250 EUR al mes")?.priceEur).toBe(1250);
+  });
+
+  it("splits two listings separated by single newlines", () => {
+    const body = "Piso en Eixample, 1.100 €/mes\nhttps://www.idealista.com/inmueble/10000001/\nPiso en Sants, 950 €/mes\nhttps://www.idealista.com/inmueble/10000002/\n\nDarse de baja";
+    const blocks = splitListings(body);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toContain("1.100");
+    expect(blocks[0]).not.toContain("10000002");
+    expect(blocks[1]).toContain("950");
+    expect(blocks[1]).not.toContain("Darse de baja");
+    expect(splitListings("Piso 900 €/mes\nhttps://www.idealista.com/inmueble/1/\nhttps://www.idealista.com/inmueble/1/")).toHaveLength(1);
+  });
+});

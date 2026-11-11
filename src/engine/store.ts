@@ -14,12 +14,34 @@ export type EventKind = (typeof EVENT_KINDS)[number];
 
 export type SaveResult =
   | { status: "new" }
-  /** Same portal id, same price: nothing new. */
+  /** Same portal id, same price, nothing the stored listing lacks: nothing new. */
   | { status: "duplicate" }
+  /** Same portal id seen again with facts the stored listing lacked (a bare link, then the ad). The new facts were merged into the stored listing. */
+  | { status: "enriched"; listing: Listing }
   /** No portal id and the same facts hash: probably the same flat, but sparse facts collide, so it is still shown. */
   | { status: "possible_duplicate" }
   /** Same portal id with a different price. The stored listing is replaced by the new one. */
   | { status: "revision"; oldPriceEur: number; newPriceEur: number };
+
+const isEmpty = (v: unknown) => v === undefined || v === null || v === "" || v === "unknown";
+
+/**
+ * The stored listing plus every non-empty field of `fresh` it lacks (existing values win). Null when nothing
+ * is added. `seenAt`, `id` and `source` are never merged; `evidence` is merged per key.
+ */
+function mergeMissing(old: Listing, fresh: Listing): Listing | null {
+  const out: Record<string, unknown> = { ...old };
+  let changed = false;
+  for (const [k, v] of Object.entries(fresh)) {
+    if (k === "id" || k === "source" || k === "seenAt" || k === "evidence") continue;
+    if (isEmpty(v) || !isEmpty((old as Record<string, unknown>)[k])) continue;
+    out[k] = v;
+    changed = true;
+    const e = fresh.evidence[k];
+    if (e && !old.evidence[k]) out.evidence = { ...(out.evidence as object), [k]: e };
+  }
+  return changed ? ListingSchema.parse(out) : null;
+}
 
 export const DEFAULT_RETENTION_DAYS = 90;
 
@@ -259,6 +281,11 @@ export function openStore(path: string = dbPath()): Store {
       if (old.priceEur !== undefined && l.priceEur !== undefined && old.priceEur !== l.priceEur) {
         q.updateListing.run(JSON.stringify(l), userId, l.id);
         return { status: "revision", oldPriceEur: old.priceEur, newPriceEur: l.priceEur };
+      }
+      const merged = mergeMissing(old, l);
+      if (merged) {
+        q.updateListing.run(JSON.stringify(merged), userId, l.id);
+        return { status: "enriched", listing: merged };
       }
       return { status: "duplicate" };
     },
