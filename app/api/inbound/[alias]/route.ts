@@ -6,6 +6,7 @@ import { json } from "../../../../src/server/http";
 import { activeDossierUrl } from "../../../../src/server/grants";
 import { GMAIL_FORWARDING_SENDER, senderAddress, stripHtml, truncateText } from "../../../../src/server/inbound";
 import { getRuntime, purgeIfDue } from "../../../../src/server/runtime";
+import { UserGoneError } from "../../../../src/engine/store";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ alias: string 
     await sendCards(rt.tg, rt.store, userId, chatId, results, ui);
     return json({ ok: true, cards: results.filter((r) => !r.duplicate).length });
   } catch (err) {
+    // The renter ran /delete while this email was being read: accept it and keep nothing.
+    if (err instanceof UserGoneError) return json({ ok: true, gone: true });
     console.error(`[casanopasa] inbound failed: ${(err as Error).name}`);
     return json({ error: "failed" }, 502);
   }

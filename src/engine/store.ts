@@ -327,6 +327,8 @@ export function openStore(path: string = dbPath(), options: StoreOptions = {}): 
     },
     recordEvent(userId, listingId, kind, at, receivedAt) {
       if (!EVENT_KINDS.includes(kind)) throw new Error(`unknown event kind ${kind}`);
+      // Strict mode: a slow path (a draft, a callback) finishing after /delete must not write identifying rows.
+      ensureUser(userId);
       q.insertEvent.run(userId, listingId, kind, at, receivedAt ?? null);
     },
     events(userId, kind) {
@@ -470,6 +472,7 @@ export function openStore(path: string = dbPath(), options: StoreOptions = {}): 
     listingKey(userId, listingId) {
       const row = db.prepare("SELECT key FROM listing_keys WHERE user_id = ? AND listing_id = ?").get(userId, listingId) as { key: string } | undefined;
       if (row) return row.key;
+      ensureUser(userId); // strict mode: never mint a key for a renter who ran /delete
       const key = randomBytes(9).toString("base64url");
       db.prepare("INSERT INTO listing_keys (key, user_id, listing_id, created_at) VALUES (?, ?, ?, ?)").run(key, userId, listingId, nowIso());
       return key;

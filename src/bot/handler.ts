@@ -163,6 +163,7 @@ export function createBot(deps: BotDeps) {
     if (declared !== undefined && declared > MAX_FILE_BYTES) return tg.sendMessage(chatId, S.docsTooBig);
     if (!deps.files) return tg.sendMessage(chatId, S.dossierNoKey);
     let fileName: string | undefined;
+    let committed = false;
     try {
       await tg.sendChatAction(chatId);
       const info = await tg.getFile(fileId);
@@ -171,11 +172,12 @@ export function createBot(deps: BotDeps) {
       if (bytes.length > MAX_FILE_BYTES) return await tg.sendMessage(chatId, S.docsTooBig);
       fileName = deps.files.put(bytes);
       store.addDocument({ id: randomBytes(16).toString("hex"), userId, label, mime, size: bytes.length, fileName, createdAt: now().toISOString() });
+      committed = true; // from here a row owns the file: a later failure (e.g. sending the reply) must not delete it
       setFlow(userId, { kind: "docs", label });
       await tg.sendMessage(chatId, S.docsSaved(esc(S.docsLabels[label] ?? label)));
     } catch (err) {
       // The file is on disk but no row owns it: never leave an orphan (after /delete, or on any failure).
-      if (fileName) {
+      if (fileName && !committed) {
         try {
           deps.files?.remove(fileName);
         } catch {
