@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { digitsGrounded, draft, templateDraft, toE164, unsupportedTopics } from "../src/engine/draft";
+import { digitsGrounded, draft, fitDraftText, templateDraft, toE164, unsupportedTopics } from "../src/engine/draft";
 import { listing, profile } from "./fixtures";
 
 const env = { ACCOUNTS_URL: "https://hub.invalid", ACCOUNTS_SERVICE_CASANOPASA: "tok" };
@@ -130,5 +130,29 @@ describe("model drafts and the D2 guards", () => {
   it("digit check tolerates separators", () => {
     expect(digitsGrounded("1.250 € y +34 600 000 000", ['{"priceEur":1250}', '"+34 600 000 000"'])).toBe(true);
     expect(digitsGrounded("el 3 de diciembre", ['{"moveInFrom":"2026-12-01"}'])).toBe(false);
+  });
+});
+
+describe("review fixes", () => {
+  it("falls back when a listing number is claimed as income", async () => {
+    const d = await draft(listing(), profile(), { env, fetch: fakeHub("Hola, mi ingreso mensual es de 1250 € y me interesa el piso. Ana Prueba") });
+    expect(d.origin).toBe("template");
+    const ok = await draft(listing(), profile(), { env, fetch: fakeHub("Hola, me interesa el piso de 1250 € al mes. Mis ingresos netos son 2800 €. Ana Prueba") });
+    expect(ok.origin).toBe("model");
+  });
+
+  it("falls back when the renter's income is claimed as the rent", async () => {
+    const d = await draft(listing(), profile(), { env, fetch: fakeHub("Hola, el alquiler de 2800 € me parece bien. Ana Prueba") });
+    expect(d.origin).toBe("template");
+  });
+
+  it("long profile fields never overflow or throw", async () => {
+    const p = profile({ occupation: "o".repeat(200), pitch: "p ".repeat(200).trim(), availability: "a".repeat(200), pets: "g".repeat(150), occupantsNote: "n".repeat(200), name: "N".repeat(100) });
+    const d = await draft(listing(), p, { env: {} });
+    expect(d.origin).toBe("template");
+    expect(d.text.length).toBeLessThanOrEqual(1200);
+    expect(fitDraftText("Frase uno. ".repeat(300)).length).toBeLessThanOrEqual(1200);
+    expect(fitDraftText("x".repeat(3000))).toHaveLength(1200);
+    expect(() => profile({ occupation: "o".repeat(201) })).toThrow();
   });
 });

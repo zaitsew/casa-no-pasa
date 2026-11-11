@@ -77,3 +77,24 @@ describe("store", () => {
     expect(store.usage().users).toBe(0);
   });
 });
+
+describe("enrichment", () => {
+  it("a sparse portal listing seen again with facts is enriched, not a duplicate", () => {
+    const sparse = listing({ id: "idealista:7", portalId: "7", source: "idealista", priceEur: undefined, areaM2: undefined, rooms: undefined, neighbourhood: undefined, description: undefined, evidence: {} });
+    expect(store.saveListing("u1", sparse)).toEqual({ status: "new" });
+    const full = listing({ id: "idealista:7", portalId: "7", source: "idealista", priceEur: 1200 });
+    const r = store.saveListing("u1", full);
+    expect(r.status).toBe("enriched");
+    const stored = store.getListing("u1", "idealista:7")!;
+    expect(stored).toMatchObject({ priceEur: 1200, areaM2: 75, rooms: 3, neighbourhood: "Gràcia" });
+    expect(stored.evidence.areaM2).toBe("75 m²");
+    expect(store.saveListing("u1", full)).toEqual({ status: "duplicate" });
+  });
+
+  it("keeps existing values when the price is unchanged", () => {
+    const a = listing({ id: "idealista:8", portalId: "8", source: "idealista", rooms: 2, areaM2: undefined });
+    store.saveListing("u1", a);
+    store.saveListing("u1", { ...a, rooms: 5, areaM2: 60 });
+    expect(store.getListing("u1", "idealista:8")).toMatchObject({ rooms: 2, areaM2: 60 });
+  });
+});

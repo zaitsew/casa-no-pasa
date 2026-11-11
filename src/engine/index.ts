@@ -17,8 +17,10 @@ export interface CardResult {
   assessment: Assessment;
   /** Null when the renter has no profile yet. */
   draft: Draft | null;
-  /** Same portal id and same price seen before: nothing new to show. */
+  /** Same portal id and same price seen before, with nothing the stored listing lacked: nothing new to show. */
   duplicate: boolean;
+  /** Same portal id seen again with facts the stored listing lacked (a bare link, then the ad). `listing` is the merged one; show a full card. */
+  enriched?: true;
   /** No portal id and the same facts as an earlier listing. Still assessed, drafted and shown. */
   possibleDuplicate: boolean;
   /** Same portal id, different price. */
@@ -57,16 +59,18 @@ export function createEngine(opts: EngineOptions = {}): CasaEngine {
       const out: CardResult[] = [];
       for (const listing of listings) {
         const saved = store.saveListing(userId, listing);
+        const shown = saved.status === "enriched" ? saved.listing : listing;
         const duplicate = saved.status === "duplicate";
-        const assessment = assess(listing, filters);
-        const reply = profile ? await draft(listing, profile, ai) : null;
+        const assessment = assess(shown, filters);
+        const reply = profile ? await draft(shown, profile, ai) : null;
         const at = now();
         if (!duplicate) store.recordEvent(userId, listing.id, "card_shown", at.toISOString(), raw.receivedAt);
         out.push({
-          listing,
+          listing: shown,
           assessment,
           draft: reply,
           duplicate,
+          ...(saved.status === "enriched" ? { enriched: true as const } : {}),
           possibleDuplicate: saved.status === "possible_duplicate",
           ...(saved.status === "revision" ? { revision: { oldPriceEur: saved.oldPriceEur, newPriceEur: saved.newPriceEur } } : {}),
           secondsToCard: Math.max(0, (at.getTime() - Date.parse(raw.receivedAt)) / 1000),

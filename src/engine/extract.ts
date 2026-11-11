@@ -37,13 +37,15 @@ export function numWord(s: string): number | undefined {
 }
 
 function parseEuro(raw: string): number | undefined {
-  const n = Math.round(Number(raw.replace(/[.\s]/g, "")));
+  // Decimals are only ",00" / ".00"; every other "." "," or space between digits is a thousands separator.
+  const n = Number(raw.replace(/[.,]00$/, "").replace(/[.,\s\u00a0]/g, ""));
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-/** Monthly price: "1.250 €/mes", "€1250", "950 euros al mes". Prefers a figure marked monthly. */
+/** Monthly price: "1.250 €/mes", "1,250 EUR/month", "1 250 €", "€1250", "950 euros al mes". Prefers a figure marked monthly. */
 export function findPrice(text: string): { priceEur: number; evidence: string } | undefined {
-  const re = /(?:€\s?(\d{1,3}(?:[.\s]\d{3})+|\d{3,5})|(\d{1,3}(?:[.\s]\d{3})+|\d{3,5})\s?(?:€|eur(?:os?)?\b))(?:,\d{1,2})?(\s?(?:\/|al |por |a )?\s?(?:mes|month|mensuales?)\b)?/gi;
+  const num = String.raw`(?<![\d.,])(?:\d{1,3}(?:[.,\u00a0 ]\d{3})+|\d{3,5})(?:[.,]00(?!\d))?`;
+  const re = new RegExp(String.raw`(?:€\s?(${num})|(${num})\s?(?:€|eur(?:os?)?\b))(\s?(?:\/|al |por |a )?\s?(?:mes|month|mensuales?)\b)?`, "gi");
   let first: { priceEur: number; evidence: string } | undefined;
   for (const m of text.matchAll(re)) {
     const value = parseEuro(m[1] ?? m[2] ?? "");
@@ -198,20 +200,68 @@ export function listingId(l: Pick<Listing, "source" | "portalId" | "priceEur" | 
 
 const isListingHit = (h: PortalHit) => !!h.portalId;
 
+interface LinkAt {
+  key: string;
+  start: number;
+  end: number;
+}
+
+/** One entry per distinct portal listing URL, with its position in the text. */
+function listingLinks(text: string): LinkAt[] {
+  const seen = new Set<string>();
+  const out: LinkAt[] = [];
+  for (const m of text.matchAll(/https?:\/\/[^\s<>"'`)\]]+/gi)) {
+    const url = m[0].replace(/[.,;:!?]+$/, "");
+    const hit = detectPortal(url);
+    if (!hit?.portalId) continue;
+    const key = `${hit.source}:${hit.portalId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ key, start: m.index!, end: m.index! + url.length });
+  }
+  return out;
+}
+
+/** Start and end offsets of the blank-line paragraph that contains `pos`. */
+function paragraphAround(text: string, pos: number): { start: number; end: number } {
+  let start = 0;
+  let end = text.length;
+  for (const m of text.matchAll(/\n[ \t]*\n/g)) {
+    const at = m.index!;
+    if (at + m[0].length <= pos) start = at + m[0].length;
+    else if (at >= pos) {
+      end = at;
+      break;
+    }
+  }
+  return { start, end };
+}
+
 /**
- * Blocks of an email, one per listing link. A price-bearing block just before a link belongs to it.
- * Fewer than two listing links: the whole text is one listing.
+ * One block per distinct portal listing URL. A block runs from the start of its URL's paragraph (or the end of
+ * the previous listing URL, when two links share a paragraph) to the next listing URL or the end of its own
+ * paragraph. A price-bearing paragraph just before a link belongs to it. Fewer than two listing links: the whole
+ * text is one listing (a lone ad is never cut into paragraphs).
  */
 export function splitListings(text: string): string[] {
-  const blocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
-  const hasLink = blocks.map((b) => detectPortals(b).some(isListingHit));
-  if (hasLink.filter(Boolean).length < 2) return [text];
+  const links = listingLinks(text);
+  if (links.length < 2) return [text];
+  const starts = links.map((l, i) => {
+    const pStart = paragraphAround(text, l.start).start;
+    return i === 0 ? pStart : Math.max(pStart, links[i - 1]!.end);
+  });
   const out: string[] = [];
-  blocks.forEach((b, i) => {
-    if (!hasLink[i]) return;
-    const prev = blocks[i - 1];
-    const prevOk = prev !== undefined && !hasLink[i - 1] && findPrice(prev) && !findPrice(b);
-    out.push(prevOk ? `${prev}\n\n${b}` : b);
+  links.forEach((l, i) => {
+    const pEnd = paragraphAround(text, l.end).end;
+    const end = i + 1 < links.length ? Math.min(starts[i + 1]!, pEnd) : pEnd;
+    let block = text.slice(starts[i], end).trim();
+    const pStart = paragraphAround(text, l.start).start;
+    if (starts[i] === pStart && pStart > 0) {
+      const prev = paragraphAround(text, pStart - 1);
+      const prevText = text.slice(prev.start, prev.end).trim();
+      if (prevText && !detectPortals(prevText).some(isListingHit) && findPrice(prevText) && !findPrice(block)) block = `${prevText}\n\n${block}`;
+    }
+    out.push(block);
   });
   return out.slice(0, MAX_LISTINGS_PER_INPUT);
 }
@@ -254,6 +304,9 @@ const TOOL_DEF = {
   },
 };
 
+/** Image inputs only: the model also transcribes the visible ad text. */
+const OCR_PROP = { type: "string", description: "The advert text visible in the image, transcribed as written (at most 3000 characters)." };
+
 const opt = <T extends z.ZodType>(schema: T) => z.preprocess((v) => (v === null ? undefined : v), schema.optional());
 
 const ModelArgsSchema = z.object({
@@ -275,6 +328,7 @@ const ModelArgsSchema = z.object({
   advertiser: opt(z.enum(["private", "agency", "unknown"])),
   contactPhone: opt(z.string().trim().min(5).max(30)),
   contactName: opt(z.string().trim().min(1).max(80)),
+  ocrText: opt(z.preprocess((v) => (typeof v === "string" ? v.slice(0, MAX_OCR_CHARS) : v), z.string())),
   evidence: z.record(z.string(), z.string()).default({}),
 });
 
@@ -284,10 +338,12 @@ const SYSTEM = [
   "It may be in Spanish, Catalan or English.",
   "Set only fields the advert states. Never guess, never infer, never convert. Leave unknown fields out.",
   "For every field you set, put in `evidence` the exact words of the advert that state it, copied character for character.",
+  "With an image, also set ocrText to the advert text visible in it, as written.",
   "priceEur is the monthly rent in euros. contract is 'seasonal' only if the advert says so, 'long' only if it says long-term.",
 ].join(" ");
 
-const SCREENSHOT = "screenshot";
+const MAX_OCR_CHARS = 3000;
+const MAX_IMAGE_EVIDENCE_CHARS = 200;
 
 function includesLoose(haystack: string, needle: string): boolean {
   if (!needle.trim()) return false;
@@ -295,13 +351,14 @@ function includesLoose(haystack: string, needle: string): boolean {
 }
 
 /**
- * Keep only the model fields whose evidence is a substring of the input text. With an image input the
- * evidence "screenshot" is also accepted (the renter can check it on the card).
+ * Keep only the model fields whose evidence is a substring of the input text. With an image input the model
+ * quotes text we cannot check, so its evidence strings are accepted as written (the renter sees them on the
+ * card), cut to 200 characters. `ocrText` is returned for image inputs only.
  */
-export function acceptModelFields(raw: unknown, sourceText: string, hasImage: boolean): { fields: Partial<Listing>; evidence: Record<string, string> } | null {
+export function acceptModelFields(raw: unknown, sourceText: string, hasImage: boolean): { fields: Partial<Listing>; evidence: Record<string, string>; ocrText?: string } | null {
   const parsed = ModelArgsSchema.safeParse(raw);
   if (!parsed.success) return null;
-  const { evidence: ev, ...rest } = parsed.data;
+  const { evidence: ev, ocrText, ...rest } = parsed.data;
   const fields: Record<string, unknown> = {};
   const evidence: Record<string, string> = {};
   for (const [key, value] of Object.entries(rest)) {
@@ -310,20 +367,22 @@ export function acceptModelFields(raw: unknown, sourceText: string, hasImage: bo
     if (typeof e !== "string") continue;
     if (includesLoose(sourceText, e)) {
       fields[key] = value;
-      evidence[key] = e;
-    } else if (hasImage && e.trim().toLowerCase() === SCREENSHOT) {
+      evidence[key] = hasImage ? e.slice(0, MAX_IMAGE_EVIDENCE_CHARS) : e;
+    } else if (hasImage && e.trim()) {
       fields[key] = value;
-      evidence[key] = SCREENSHOT;
+      evidence[key] = e.trim().slice(0, MAX_IMAGE_EVIDENCE_CHARS);
     }
   }
-  return { fields: fields as Partial<Listing>, evidence };
+  const ocr = hasImage && ocrText?.trim() ? ocrText.trim() : undefined;
+  return { fields: fields as Partial<Listing>, evidence, ...(ocr ? { ocrText: ocr } : {}) };
 }
 
 async function modelPass(block: string, raw: RawInput, opts: AiOptions, userId: string) {
   const hasImage = !!(raw.imageBase64 && raw.imageMime);
   const parts: ContentPart[] = [{ type: "text", text: `Advert text:\n<<<\n${clip(block, 6000)}\n>>>` }];
   if (hasImage) parts.push({ type: "image_url", image_url: { url: `data:${raw.imageMime};base64,${raw.imageBase64}` } });
-  const out = await callTool("extract", TOOL_DEF, SYSTEM, parts, 700, {
+  const toolDef = hasImage ? { ...TOOL_DEF, parameters: { ...TOOL_DEF.parameters, properties: { ...TOOL_DEF.parameters.properties, ocrText: OCR_PROP } } } : TOOL_DEF;
+  const out = await callTool("extract", toolDef, SYSTEM, parts, 700, {
     ...opts,
     externalUser: userId,
     timeoutMs: opts.timeoutMs ?? (hasImage ? AI_IMAGE_TIMEOUT_MS : undefined),
@@ -369,11 +428,13 @@ export async function extract(input: RawInput, userId: string, opts: AiOptions =
     const det = deterministic(block);
     const fields: Record<string, unknown> = { ...det.fields };
     const evidence = { ...det.evidence };
+    let ocrText: string | undefined;
     const textOnly = squash(block.replace(/https?:\/\/\S+/g, ""));
 
     if (useAi && (textOnly.length > 0 || hasImage)) {
       const m = await modelPass(block, raw, opts, userId);
       if (m) {
+        ocrText = m.ocrText;
         for (const [k, v] of Object.entries(m.fields)) {
           const cur = fields[k];
           const open = cur === undefined || ((k === "contract" || k === "advertiser") && cur === "unknown");
@@ -393,7 +454,7 @@ export async function extract(input: RawInput, userId: string, opts: AiOptions =
       ...(hit ? { url: hit.url } : {}),
       ...(hit?.portalId ? { portalId: hit.portalId } : {}),
       ...(title ? { title } : {}),
-      ...(textOnly.length > 0 ? { description: clip(block, 5000) } : {}),
+      ...(textOnly.length > 0 ? { description: clip(block, 5000) } : ocrText ? { description: clip(ocrText, 3000) } : {}),
       evidence,
       seenAt: raw.receivedAt,
     });
