@@ -9,14 +9,14 @@ users = "owner"                         # owner until Sprint 3 (docs/PLAN.md)
 target = "public"
 platforms = ["telegram"]
 primary = "telegram"                    # why: docs/PLAN.md, section "Surface"
-identity = "none"                       # S1.2: the Telegram user id from a verified webhook
+identity = "telegram"                   # the Telegram user id from a webhook that carries the secret token
 tenancy = "user_id"
 backend = "droplet sqlite"
 llm = "accounts hub, claude-haiku-5-5"
 first_run = "none"
 sample_data = "none"
 onboarding_doc = "README.md"
-secrets = ["ACCOUNTS_SERVICE_CASANOPASA", "CASANOPASA_FILES_KEY"]   # every name appears in .env.example
+secrets = ["ACCOUNTS_SERVICE_CASANOPASA", "CASANOPASA_FILES_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET", "CASANOPASA_INBOUND_SECRET"]   # every name appears in .env.example
 cost_cap = "hub budget per renter arrives in Sprint 3"
 
 [[check]]
@@ -25,7 +25,7 @@ how = "clone the repo, run ./check.sh, read what it says"
 status = "untested"
 
 [security]
-# Stored: the renter's typed profile facts, filters, listings they shared, events. Documents arrive in S1.2.
+# Stored: the renter's typed profile facts, filters, listings they shared, events. Documents (encrypted) and dossier grants from S1.2.
 data = ["account", "messages"]
 trifecta = []
 secrets = "runtime-env"

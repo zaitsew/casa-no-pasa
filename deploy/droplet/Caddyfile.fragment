@@ -1,0 +1,17 @@
+# One site block, rendered to /srv/casanopasa/Caddyfile on the shared server, where the
+# root /srv/Caddyfile picks it up with `import /srv/*/Caddyfile`. `common` is the
+# shared snippet (compression, HSTS, nosniff, no Server header). Caddy gets the
+# certificate itself as long as the hostname resolves to this box.
+
+{{name}}.{{domain}} {
+	import common
+
+	# /d/<token> carries a dossier token in the path. Do not add a `log` directive here; if you must,
+	# filter the path (`log { format filter { request>uri delete } }`) so a token never reaches a log file.
+
+	# Hashed build output: the file name changes whenever the content does.
+	@static path /_next/static/*
+	header @static Cache-Control "public, max-age=31536000, immutable"
+
+	reverse_proxy {{name}}:{{port}}
+}

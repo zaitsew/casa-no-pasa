@@ -1,0 +1,3 @@
+# Bot UI copy in en, es and ru (docs/PLAN.md): localization, not a finding.
+src/bot/strings.ts
+src/bot/fields.ts
