@@ -1,0 +1,32 @@
+# teyla.toml — what must run without you, and what only you can confirm.
+
+[product]
+name = "casa-no-pasa"
+usage = "./check.sh usage"
+
+[productize]
+users = "owner"                         # owner until Sprint 3 (docs/PLAN.md)
+target = "public"
+platforms = ["telegram"]
+primary = "telegram"                    # why: docs/PLAN.md, section "Surface"
+identity = "none"                       # S1.2: the Telegram user id from a verified webhook
+tenancy = "user_id"
+backend = "droplet sqlite"
+llm = "accounts hub, claude-haiku-5-5"
+first_run = "none"
+sample_data = "none"
+onboarding_doc = "README.md"
+secrets = ["ACCOUNTS_SERVICE_CASANOPASA", "CASANOPASA_FILES_KEY"]   # every name appears in .env.example
+cost_cap = "hub budget per renter arrives in Sprint 3"
+
+[[check]]
+name = "first-run check passes on a clean machine"
+how = "clone the repo, run ./check.sh, read what it says"
+status = "untested"
+
+[security]
+# Stored: the renter's typed profile facts, filters, listings they shared, events. Documents arrive in S1.2.
+data = ["account", "messages"]
+trifecta = []
+secrets = "runtime-env"
+hosts = "docs/PRIVACY.md"
