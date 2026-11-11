@@ -34,7 +34,16 @@ elif [ "$(printf '%s' "${CASANOPASA_AI:-}" | tr '[:upper:]' '[:lower:]')" = "off
   warnings+=("AI is off: CASANOPASA_AI=off (the kill switch).")
 fi
 [ -n "${CASANOPASA_DB_PATH:-}" ] || warnings+=("CASANOPASA_DB_PATH is not set: the store will use ./data/casanopasa.db")
-[ -n "${CASANOPASA_FILES_KEY:-}" ] || warnings+=("CASANOPASA_FILES_KEY is not set: needed from S1.2 (dossier documents). Generate one with: openssl rand -hex 32")
+if [ -z "${CASANOPASA_FILES_KEY:-}" ]; then
+  warnings+=("CASANOPASA_FILES_KEY is not set: documents and dossier links stay off. Generate one with: openssl rand -hex 32")
+elif ! printf '%s' "$CASANOPASA_FILES_KEY" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+  warnings+=("CASANOPASA_FILES_KEY must be 64 hex characters (openssl rand -hex 32); documents stay off until it is.")
+fi
+[ -n "${TELEGRAM_BOT_TOKEN:-}" ] || warnings+=("TELEGRAM_BOT_TOKEN is not set: create a bot with @BotFather and put the token in .env")
+[ -n "${TELEGRAM_BOT_USERNAME:-}" ] || warnings+=("TELEGRAM_BOT_USERNAME is not set: needed for invite links")
+[ -n "${TELEGRAM_WEBHOOK_SECRET:-}" ] || warnings+=("TELEGRAM_WEBHOOK_SECRET is not set: the webhook refuses every request. Generate one with: openssl rand -hex 24")
+[ -n "${CASANOPASA_PUBLIC_URL:-}" ] || warnings+=("CASANOPASA_PUBLIC_URL is not set: needed for the webhook and dossier links (https://...)")
+[ -n "${CASANOPASA_INBOUND_SECRET:-}" ] || warnings+=("CASANOPASA_INBOUND_SECRET is not set: alert email stays off")
 
 # --- toolchain ----------------------------------------------------------------------------------
 if command -v node >/dev/null 2>&1; then

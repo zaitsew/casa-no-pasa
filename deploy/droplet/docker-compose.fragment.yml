@@ -1,0 +1,55 @@
+# A fragment, not a stack. add-product.sh renders it to /srv/casanopasa/docker-compose.yml
+# on the shared server and adds that path to the root /srv/docker-compose.yml's
+# `include:` list, so the root file is never edited by hand.
+#
+# Caddy (on the external network `apps`) reaches this service by name. Nothing
+# publishes a port to the host.
+#
+# Redeploy with scripts/deploy.sh. To do it by hand, use the ROOT stack, not this
+# file on its own, so the container stays in the one compose project:
+#   cd /srv && docker compose up -d --build casanopasa
+
+services:
+  casanopasa:
+    # Built on the box from the bundle rsynced to ./app (see deploy/droplet/Dockerfile).
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: casanopasa-web:latest
+    restart: unless-stopped
+    # add-product.sh creates /srv/{{name}}/.env from deploy/droplet/.env.example. Fill it in
+    # (bot token, webhook secret, files key) before the first start.
+    env_file:
+      - /srv/{{name}}/.env
+    environment:
+      NODE_ENV: production
+      PORT: "{{port}}"
+      HOSTNAME: "0.0.0.0"
+      # Where the SQLite file and the encrypted documents live inside the container: the volume below.
+      CASANOPASA_DB_PATH: /data/casanopasa.db
+      CASANOPASA_FILES_DIR: /data/files
+    volumes:
+      # The data volume: the database, its WAL files and the encrypted documents survive rebuilds. Owned by uid 1000
+      # (the image's `node` user); scripts/deploy.sh fixes the owner on every run.
+      - /srv/{{name}}/data:/data
+    # Next stays well under its 192 MB heap cap; 300 MB leaves room for the runtime.
+    mem_limit: 300m
+    cpus: 0.5
+    networks:
+      - apps
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:{{port}}/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  # Declared external: this fragment joins the network Caddy is on instead of making one.
+  apps:
+    external: true

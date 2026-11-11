@@ -36,7 +36,8 @@ export interface EngineOptions extends AiOptions {
 
 export interface CasaEngine extends Engine {
   store: Store;
-  handleInput(userId: string, raw: RawInput): Promise<CardResult[]>;
+  /** `opts.dossierUrl` is put in the draft when set; without it nothing changes. */
+  handleInput(userId: string, raw: RawInput, opts?: { dossierUrl?: string }): Promise<CardResult[]>;
 }
 
 export function createEngine(opts: EngineOptions = {}): CasaEngine {
@@ -50,7 +51,7 @@ export function createEngine(opts: EngineOptions = {}): CasaEngine {
     assess: (listing: Listing, filters: Filters) => assess(listing, filters),
     draft: (listing: Listing, profile: Profile, o?: { lang?: Lang; dossierUrl?: string }) => draft(listing, profile, { ...ai, ...o }),
 
-    async handleInput(userId, rawInput) {
+    async handleInput(userId, rawInput, o) {
       const raw = RawInputSchema.parse(rawInput);
       store.upsertUser(userId);
       const listings = await extract(raw, userId, ai);
@@ -62,7 +63,7 @@ export function createEngine(opts: EngineOptions = {}): CasaEngine {
         const shown = saved.status === "enriched" ? saved.listing : listing;
         const duplicate = saved.status === "duplicate";
         const assessment = assess(shown, filters);
-        const reply = profile ? await draft(shown, profile, ai) : null;
+        const reply = profile ? await draft(shown, profile, { ...ai, ...(o?.dossierUrl ? { dossierUrl: o.dossierUrl } : {}) }) : null;
         const at = now();
         if (!duplicate) store.recordEvent(userId, listing.id, "card_shown", at.toISOString(), raw.receivedAt);
         out.push({
