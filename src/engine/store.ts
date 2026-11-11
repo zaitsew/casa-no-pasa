@@ -361,7 +361,7 @@ export function openStore(path: string = dbPath()): Store {
     redeemInvite(codeHash, telegramId, at) {
       db.exec("BEGIN");
       try {
-        const r = db.prepare("UPDATE invites SET used_by = ?, used_at = ? WHERE code_hash = ? AND used_by IS NULL").run(telegramId, at ?? nowIso(), codeHash);
+        const r = db.prepare("UPDATE invites SET used_by = ?, used_at = ? WHERE code_hash = ? AND used_at IS NULL").run(telegramId, at ?? nowIso(), codeHash);
         if (Number(r.changes) !== 1) {
           db.exec("ROLLBACK");
           return false;
