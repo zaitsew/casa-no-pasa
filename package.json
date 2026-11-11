@@ -1,0 +1,23 @@
+{
+  "name": "casa-no-pasa",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reply first and well to new Barcelona rental listings: assess, flag, and draft a reply the renter sends.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "usage": "tsx scripts/usage.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
