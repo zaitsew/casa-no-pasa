@@ -71,14 +71,20 @@ export function createTg(opts: { token?: string; fetch?: typeof fetch; env?: Rec
     return parsed.result as T;
   }
 
-  const clip = (t: string) => (t.length > MAX_TEXT ? `${t.slice(0, MAX_TEXT - 1)}…` : t);
-  const textBody = (text: string, o?: SendOptions) => ({
-    text: clip(text),
-    ...(o?.parse === "none" ? {} : { parse_mode: "HTML" }),
-    link_preview_options: { is_disabled: true },
-    ...(o?.keyboard ? { reply_markup: { inline_keyboard: o.keyboard } } : {}),
-  });
-
+  // Safety net: slicing HTML can cut a tag or an entity and Telegram then rejects the message. Callers
+  // shorten plain text before escaping (see cards.ts); anything still too long is sent as plain text.
+  const plainOf = (html: string) => html.replace(/<[^>]*>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  const textBody = (text: string, o?: SendOptions) => {
+    const tooLong = text.length > MAX_TEXT;
+    const asPlain = o?.parse === "none" || tooLong;
+    const body = o?.parse === "none" ? text : tooLong ? plainOf(text) : text;
+    return {
+      text: body.length > MAX_TEXT ? `${body.slice(0, MAX_TEXT - 1)}…` : body,
+      ...(asPlain ? {} : { parse_mode: "HTML" }),
+      link_preview_options: { is_disabled: true },
+      ...(o?.keyboard ? { reply_markup: { inline_keyboard: o.keyboard } } : {}),
+    };
+  };
   return {
     async sendMessage(chatId, text, o) {
       const r = await call<{ message_id: number }>("sendMessage", { chat_id: chatId, ...textBody(text, o) });

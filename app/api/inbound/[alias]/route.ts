@@ -4,8 +4,8 @@ import { strings, type UiLang } from "../../../../src/bot/strings";
 import { safeEqual, sha256Hex } from "../../../../src/server/auth";
 import { json } from "../../../../src/server/http";
 import { activeDossierUrl } from "../../../../src/server/grants";
-import { GMAIL_FORWARDING_SENDER, senderAddress, stripHtml } from "../../../../src/server/inbound";
-import { getRuntime } from "../../../../src/server/runtime";
+import { GMAIL_FORWARDING_SENDER, senderAddress, stripHtml, truncateText } from "../../../../src/server/inbound";
+import { getRuntime, purgeIfDue } from "../../../../src/server/runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +13,8 @@ const MAX_BODY = 1_000_000;
 const BodySchema = z.object({
   from: z.string().max(500),
   subject: z.string().max(1000).default(""),
-  text: z.string().max(200_000).default(""),
-  html: z.string().max(600_000).optional(),
+  text: z.string().max(MAX_BODY).default(""),
+  html: z.string().max(MAX_BODY).optional(),
 });
 
 /**
@@ -36,7 +36,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ alias: string 
   } catch {
     return json({ error: "bad_request" }, 400);
   }
-  const text = body.text.trim() || (body.html ? stripHtml(body.html) : "");
+  purgeIfDue(rt);
+  // The engine refuses text over 50,000 characters; a long newsletter is cut, not rejected.
+  const text = truncateText(body.text.trim() || (body.html ? stripHtml(body.html) : ""));
   const chatId = Number(userId);
   const ui: UiLang = ((rt.store.getState(userId) as { ui?: UiLang } | undefined)?.ui) ?? "en";
 

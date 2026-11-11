@@ -202,7 +202,24 @@ export interface Store {
   close(): void;
 }
 
-export function openStore(path: string = dbPath()): Store {
+/** Thrown in strict mode when a write targets a renter whose row no longer exists (they ran /delete). */
+export class UserGoneError extends Error {
+  constructor() {
+    super("renter no longer exists");
+    this.name = "UserGoneError";
+  }
+}
+
+export interface StoreOptions {
+  /**
+   * The bot and the inbound route set this. A write never creates a renter: it fails with UserGoneError when the
+   * row is missing, so a slow request that finishes after /delete cannot bring the renter's data back.
+   * The check and the write run in one synchronous step on the single connection, so nothing interleaves.
+   */
+  strictUsers?: boolean;
+}
+
+export function openStore(path: string = dbPath(), options: StoreOptions = {}): Store {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
@@ -244,10 +261,18 @@ export function openStore(path: string = dbPath()): Store {
     createdAt: r.created_at, expiresAt: r.expires_at, revoked: r.revoked === 1,
   });
 
-  const ensureUser = (userId: string) => q.upsertUser.run(userId, null, new Date().toISOString());
+  const ensureUser = (userId: string) => {
+    if (options.strictUsers) {
+      if (db.prepare("SELECT 1 FROM users WHERE id = ?").get(userId) === undefined) throw new UserGoneError();
+      return;
+    }
+    q.upsertUser.run(userId, null, new Date().toISOString());
+  };
 
   return {
     upsertUser(userId, telegramId) {
+      // Strict mode: only an explicit link (with a Telegram id) creates a renter, never an implicit touch.
+      if (options.strictUsers && telegramId === undefined) return ensureUser(userId);
       q.upsertUser.run(userId, telegramId ?? null, new Date().toISOString());
     },
     setProfile(profile) {

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { Lang, RawInput } from "../core/schema";
 import type { CasaEngine } from "../engine";
+import { UserGoneError } from "../engine/store";
 import { formatEur } from "../engine/templates";
 import { sha256Hex } from "../server/auth";
 import type { FileStore } from "../server/files";
@@ -161,17 +162,28 @@ export function createBot(deps: BotDeps) {
     if (!DOC_MIMES.includes(mime)) return tg.sendMessage(chatId, S.docsWrongType);
     if (declared !== undefined && declared > MAX_FILE_BYTES) return tg.sendMessage(chatId, S.docsTooBig);
     if (!deps.files) return tg.sendMessage(chatId, S.dossierNoKey);
+    let fileName: string | undefined;
     try {
       await tg.sendChatAction(chatId);
       const info = await tg.getFile(fileId);
       if (info.size !== undefined && info.size > MAX_FILE_BYTES) return await tg.sendMessage(chatId, S.docsTooBig);
       const bytes = await tg.downloadFile(info.path);
       if (bytes.length > MAX_FILE_BYTES) return await tg.sendMessage(chatId, S.docsTooBig);
-      const fileName = deps.files.put(bytes);
+      fileName = deps.files.put(bytes);
       store.addDocument({ id: randomBytes(16).toString("hex"), userId, label, mime, size: bytes.length, fileName, createdAt: now().toISOString() });
       setFlow(userId, { kind: "docs", label });
       await tg.sendMessage(chatId, S.docsSaved(esc(S.docsLabels[label] ?? label)));
-    } catch {
+    } catch (err) {
+      // The file is on disk but no row owns it: never leave an orphan (after /delete, or on any failure).
+      if (fileName) {
+        try {
+          deps.files?.remove(fileName);
+        } catch {
+          /* already gone */
+        }
+      }
+      // The renter deleted themselves while the upload was running: say nothing, keep nothing.
+      if (err instanceof UserGoneError) return;
       await tg.sendMessage(chatId, S.docsFailed);
     }
   }
@@ -247,7 +259,8 @@ export function createBot(deps: BotDeps) {
       const results = await engine.handleInput(userId, raw, dossierUrl ? { dossierUrl } : undefined);
       if (results.length === 0) return void (await tg.sendMessage(chatId, S.failed));
       await sendCards(tg, store, userId, chatId, results, ui);
-    } catch {
+    } catch (err) {
+      if (err instanceof UserGoneError) return;
       await tg.sendMessage(chatId, S.failed).catch(() => undefined);
     }
   }
@@ -438,8 +451,13 @@ export function createBot(deps: BotDeps) {
         seen.push(update.update_id);
         if (seen.length > 1000) seen.shift();
       }
-      if (update.callback_query) await onCallback(update.callback_query);
-      else if (update.message) await onMessage(update.message);
+      try {
+        if (update.callback_query) await onCallback(update.callback_query);
+        else if (update.message) await onMessage(update.message);
+      } catch (err) {
+        if (err instanceof UserGoneError) return; // deleted mid-request: nothing to write, nothing to say
+        throw err;
+      }
     },
   };
 }

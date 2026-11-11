@@ -69,7 +69,7 @@ export function harness(env: Record<string, string> = {}): Harness {
   const dir = mkdtempSync(join(tmpdir(), "cnp-"));
   const tg = fakeTelegram();
   const clock = { now: new Date("2026-11-11T10:00:30.000Z") };
-  const store = openStore(":memory:");
+  const store = openStore(":memory:", { strictUsers: true });
   const rt = buildRuntime({
     env: { TELEGRAM_BOT_TOKEN: "123:abc", TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET, CASANOPASA_INBOUND_SECRET: INBOUND_SECRET, CASANOPASA_PUBLIC_URL: PUBLIC_URL, CASANOPASA_FILES_KEY: KEY_HEX, CASANOPASA_FILES_DIR: join(dir, "files"), ...env },
     fetch: tg.fetch,

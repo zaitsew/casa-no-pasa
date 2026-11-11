@@ -12,6 +12,28 @@ export const MAX_CARDS = 10;
 
 export const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+/** Telegram rejects a message over 4096 characters; stay under it with room for the markup. */
+export const CARD_MAX = 4000;
+const LINE_MAX = 240;
+
+/**
+ * Shortens PLAIN text so that its escaped form is at most `max` characters. The cut is made on the
+ * plain text, before escaping, so an entity or a tag is never split.
+ */
+export function clipPlain(plain: string, max: number): string {
+  if (esc(plain).length <= max) return plain;
+  let out = "";
+  let used = 1; // the ellipsis
+  for (const ch of plain) {
+    const n = esc(ch).length;
+    if (used + n > max) break;
+    out += ch;
+    used += n;
+  }
+  return `${out.trimEnd()}…`;
+}
+const line = (plain: string): string => esc(clipPlain(plain, LINE_MAX));
+
 /** A listing with no facts at all: only a link was shared. */
 export function isBare(l: Listing): boolean {
   return !l.description && l.priceEur === undefined && l.rooms === undefined && l.areaM2 === undefined && !l.neighbourhood && !l.title;
@@ -43,22 +65,25 @@ export function renderCard(r: CardResult, key: string, ui: UiLang, draft: Draft 
       l.priceEur !== undefined ? formatEur(l.priceEur, eurLang) : undefined,
       l.rooms !== undefined ? S.rooms(l.rooms) : undefined,
       l.areaM2 !== undefined ? `${l.areaM2} m²` : undefined,
-      l.neighbourhood ? esc(l.neighbourhood) : undefined,
+      l.neighbourhood ? esc(clipPlain(l.neighbourhood, 60)) : undefined,
       esc(source),
     ].filter(Boolean);
     lines.push(head.join(" · "));
 
     const flags = [...a.flags].sort((x, y) => SEVERITY_ORDER[x.severity] - SEVERITY_ORDER[y.severity]).slice(0, MAX_FLAG_LINES);
-    for (const f of flags) lines.push(`${SEVERITY_EMOJI[f.severity]} ${esc(S.flags[f.code] ?? f.detail)}`);
+    for (const f of flags) lines.push(`${SEVERITY_EMOJI[f.severity]} ${line(S.flags[f.code] ?? f.detail)}`);
     const unknowns = a.unknowns.filter((u) => !u.startsWith("only a link was shared")).map((u) => S.unknowns[u] ?? u);
-    if (unknowns.length) lines.push(`❓ ${esc(S.confirmBefore(unknowns.join(", ")))}`);
+    if (unknowns.length) lines.push(`❓ ${line(S.confirmBefore(unknowns.join(", ")))}`);
   }
   if (r.possibleDuplicate) lines.push(`♻️ ${S.possibleDuplicate}`);
   if (r.revision) lines.push(`💶 ${S.priceChanged(formatEur(r.revision.oldPriceEur, eurLang), formatEur(r.revision.newPriceEur, eurLang))}`);
   if (r.enriched) lines.push(`🔄 ${S.updated}`);
 
-  if (draft) lines.push("", `<pre>${esc(draft.text)}</pre>`);
-  else lines.push("", S.noDraft);
+  if (draft) {
+    // The draft gets whatever room the other parts leave; it is shortened as plain text.
+    const used = lines.join("\n").length + "\n\n<pre></pre>".length;
+    lines.push("", `<pre>${esc(clipPlain(draft.text, Math.max(200, CARD_MAX - used)))}</pre>`);
+  } else lines.push("", S.noDraft);
 
   const kb: Keyboard = [];
   const row1 = [];

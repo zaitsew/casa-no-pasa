@@ -18,6 +18,8 @@ export interface Runtime {
   inboundSecret: string;
   inboundDomain: string;
   now: () => Date;
+  /** Epoch ms of the last retention purge by this process. */
+  lastPurgeAt?: number;
 }
 
 export interface RuntimeOptions {
@@ -30,7 +32,7 @@ export interface RuntimeOptions {
 
 export function buildRuntime(opts: RuntimeOptions = {}): Runtime {
   const env = opts.env ?? process.env;
-  const store = opts.store ?? openStore();
+  const store = opts.store ?? openStore(undefined, { strictUsers: true });
   const now = opts.now ?? (() => new Date());
   const engine = createEngine({ store, env, fetch: opts.fetch, now });
   const tg = opts.tg ?? createTg({ env, fetch: opts.fetch });
@@ -63,16 +65,20 @@ export function setRuntime(rt: Runtime | undefined): void {
   current = rt;
 }
 
-let lastPurge = 0;
+const PURGE_EVERY_MS = 3_600_000;
 
-/** Deletes listings older than the retention period (docs/PRIVACY.md), at most once a day. */
-export function purgeIfDue(rt: Runtime): void {
+/**
+ * Deletes listings older than the retention period (docs/PRIVACY.md), at most once an hour per process.
+ * The webhook and the inbound route both call it; a later cron can call it too. Returns the number purged,
+ * or undefined when it was not due.
+ */
+export function purgeIfDue(rt: Runtime): number | undefined {
   const t = rt.now().getTime();
-  if (t - lastPurge < 86_400_000) return;
-  lastPurge = t;
+  if (rt.lastPurgeAt !== undefined && t - rt.lastPurgeAt < PURGE_EVERY_MS) return undefined;
+  rt.lastPurgeAt = t;
   try {
-    rt.store.purgeListings(DEFAULT_RETENTION_DAYS, rt.now());
+    return rt.store.purgeListings(DEFAULT_RETENTION_DAYS, rt.now());
   } catch {
-    /* retried tomorrow */
+    return undefined; // retried in an hour
   }
 }
