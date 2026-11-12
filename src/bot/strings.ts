@@ -17,7 +17,7 @@ export function pickUiLang(code: string | undefined): UiLang {
 }
 
 const en = {
-  betaOnly: "Casa No Pasa is in private beta. Ask the owner for an invite link.",
+  betaOnly: "Casa No Pasa is in private beta. Open your invite link, or paste the invite code here. No invite yet? Ask the owner.",
   linked: "You are in. Welcome to Casa No Pasa.",
   welcomeBack: "Welcome back. Send me a link, text or screenshot of a listing. /help lists the commands.",
   privacyNotice: (url: string) =>
@@ -162,7 +162,7 @@ const en = {
 export type Dict = typeof en;
 
 const es: Dict = {
-  betaOnly: "Casa No Pasa está en beta privada. Pide un enlace de invitación al propietario.",
+  betaOnly: "Casa No Pasa está en beta privada. Abre tu enlace de invitación o pega aquí el código. ¿Aún no tienes invitación? Pídela al propietario.",
   linked: "Ya estás dentro. Bienvenido a Casa No Pasa.",
   welcomeBack: "Hola de nuevo. Envíame un enlace, texto o captura de un anuncio. /help muestra los comandos.",
   privacyNotice: (url) =>
@@ -300,7 +300,7 @@ const es: Dict = {
 };
 
 const ru: Dict = {
-  betaOnly: "Casa No Pasa в закрытой бете. Попросите у владельца ссылку-приглашение.",
+  betaOnly: "Casa No Pasa в закрытой бете. Откройте ссылку-приглашение или вставьте сюда код. Приглашения нет? Попросите у владельца.",
   linked: "Вы внутри. Добро пожаловать в Casa No Pasa.",
   welcomeBack: "С возвращением. Пришлите ссылку, текст или скриншот объявления. /help покажет команды.",
   privacyNotice: (url) =>

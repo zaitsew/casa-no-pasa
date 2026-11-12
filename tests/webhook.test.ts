@@ -69,6 +69,26 @@ describe("access is invite-only", () => {
     expect(h.tg.texts().at(-1)).toMatch(/private beta/i);
   });
 
+  it("accepts the code pasted on its own or as the whole link, for a chat already started", async () => {
+    h = harness();
+    h.rt.store.createInvite(sha256Hex("Zq9TestCodeOnly_xY12ab"));
+    h.rt.store.createInvite(sha256Hex("Abcdefghijklmnop_-1234"));
+    await h.say(9001, "/start");
+    expect(h.tg.texts().at(-1)).toMatch(/paste the invite code/);
+    await h.say(9001, "  Zq9TestCodeOnly_xY12ab ");
+    expect(h.rt.store.isLinked("9001")).toBe(true);
+    await h.say(9002, "https://t.me/casa_agent?start=Abcdefghijklmnop_-1234");
+    expect(h.rt.store.isLinked("9002")).toBe(true);
+  });
+
+  it("does not treat ordinary text as a code", async () => {
+    h = harness();
+    await h.say(9003, "hola, busco piso");
+    await h.say(9003, "short");
+    expect(h.rt.store.isLinked("9003")).toBe(false);
+    expect(h.tg.texts().every((t) => /private beta/i.test(t))).toBe(true);
+  });
+
   it("ignores group chats and callbacks from unknown users", async () => {
     h = harness();
     await h.rt.bot.handleUpdate({ update_id: 1, message: { message_id: 1, date: 1, chat: { id: -5, type: "group" }, from: { id: 9001 }, text: "hi" } });

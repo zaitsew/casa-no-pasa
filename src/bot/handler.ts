@@ -267,6 +267,17 @@ export function createBot(deps: BotDeps) {
     }
   }
 
+  // An invite arrives as "/start <code>" from the t.me link, or pasted on its own: Telegram does not
+  // resend the link's payload when the chat was already started, so a bare code (or the whole link) counts too.
+  function inviteCode(text: string): string | undefined {
+    const t = text.trim();
+    return (
+      /^\/start(?:@\w+)?\s+(\S+)/.exec(t)?.[1] ??
+      /^https?:\/\/t\.me\/\w+\?start=([A-Za-z0-9_-]+)$/.exec(t)?.[1] ??
+      /^([A-Za-z0-9_-]{16,64})$/.exec(t)?.[1]
+    );
+  }
+
   // --- Messages ----------------------------------------------------------------------------------
   async function onMessage(m: TgMessage) {
     if (!m.from || m.chat.type !== "private") return;
@@ -277,7 +288,7 @@ export function createBot(deps: BotDeps) {
     const text = m.text ?? "";
 
     if (!store.isLinked(userId)) {
-      const code = /^\/start(?:@\w+)?\s+(\S+)/.exec(text)?.[1];
+      const code = inviteCode(text);
       if (code && store.redeemInvite(sha256Hex(code), userId, now().toISOString())) {
         putState(userId, { ui });
         await tg.sendMessage(chatId, S.linked);
