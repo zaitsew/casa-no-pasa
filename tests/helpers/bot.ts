@@ -94,6 +94,8 @@ export function harness(env: Record<string, string> = {}): Harness {
     addRenter(id, over = {}) {
       store.upsertUser(String(id), String(id));
       store.setProfile(profile({ userId: String(id), ...over }));
+      // Existing renters have had their first card: no follow-up offer in tests that are not about it.
+      store.setState(String(id), { firstCard: true });
     },
     async say(from, text, extra = {}) {
       const u: TgUpdate = { update_id: updateId++, message: { message_id: 1, date: Math.floor(clock.now.getTime() / 1000) - 5, chat: { id: from, type: "private" }, from: { id: from, language_code: "en" }, text, ...extra } };

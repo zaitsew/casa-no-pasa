@@ -76,7 +76,7 @@ export const ProfileSchema = z.object({
   occupation: z.string().max(200).optional(),
   contract: z.enum(["permanent", "temporary", "self-employed", "student", "other"]).optional(),
   netMonthlyIncomeEur: z.number().int().positive().optional(),
-  occupants: z.number().int().positive().default(1),
+  occupants: z.number().int().positive().optional(),
   occupantsNote: z.string().max(200).optional(),
   pets: z.string().max(150).optional(),
   moveInFrom: z.string().max(80).optional(),

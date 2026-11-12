@@ -92,7 +92,7 @@ export function applyAnswer(store: Store, userId: string, field: Field, value: s
 
 function saveProfile(store: Store, userId: string, patch: Partial<Profile>, clear: Array<keyof Profile> = []): ApplyResult {
   const base = store.getProfile(userId);
-  const merged: Record<string, unknown> = { ...(base ?? { userId, occupants: 1 }), ...patch, userId };
+  const merged: Record<string, unknown> = { ...(base ?? { userId }), ...patch, userId };
   for (const k of clear) delete merged[k];
   const parsed = ProfileSchema.safeParse(merged);
   if (!parsed.success) return { ok: false, error: "tooLong" };
@@ -112,7 +112,7 @@ function applyProfile(store: Store, userId: string, key: FieldKey, v: string | u
       return n === undefined ? { ok: false, error: "badNumber" } : saveProfile(store, userId, { netMonthlyIncomeEur: n });
     }
     case "occupants": {
-      if (v === undefined) return saveProfile(store, userId, { occupants: 1 });
+      if (v === undefined) return saveProfile(store, userId, { occupants: undefined });
       const n = parseInteger(v, 1, 20);
       return n === undefined ? { ok: false, error: "badNumber" } : saveProfile(store, userId, { occupants: n });
     }
