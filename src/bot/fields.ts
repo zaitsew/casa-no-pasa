@@ -202,16 +202,20 @@ const CONTRACT_WORDS: Array<[Profile["contract"] & string, string[]]> = [
   ["student", ["student", "estudiante", "estudiant", "студент"]],
 ];
 
-/** The contract type a free-text occupation answer names, if any (whole words, case-insensitive). The earliest mention wins. */
+const NEGATION = /(?<![\p{L}\p{N}])(not|no|non|sin|ni|не|нет|без)(?![\p{L}\p{N}])/iu;
+
+/**
+ * The contract type a free-text occupation answer names, if exactly one is named (whole words,
+ * case-insensitive). A negation anywhere, or two different types, means "ask": a wrong guess would
+ * become a fact in the reply.
+ */
 export function inferContract(text: string): Profile["contract"] | undefined {
-  let best: { at: number; contract: Profile["contract"] } | undefined;
+  if (NEGATION.test(text)) return undefined;
+  const found = new Set<Profile["contract"]>();
   for (const [contract, words] of CONTRACT_WORDS) {
-    for (const w of words) {
-      const m = new RegExp(`(?<![\\p{L}\\p{N}])${w}(?![\\p{L}\\p{N}])`, "iu").exec(text);
-      if (m && (!best || m.index < best.at)) best = { at: m.index, contract };
-    }
+    if (words.some((w) => new RegExp(`(?<![\\p{L}\\p{N}])${w}(?![\\p{L}\\p{N}])`, "iu").test(text))) found.add(contract);
   }
-  return best?.contract;
+  return found.size === 1 ? [...found][0] : undefined;
 }
 
 /** Above this a monthly income answer is probably a yearly figure. */

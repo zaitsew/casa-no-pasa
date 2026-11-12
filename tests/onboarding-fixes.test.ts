@@ -42,6 +42,13 @@ describe("contract inference", () => {
     expect(inferContract("product manager")).toBeUndefined();
   });
 
+  it("asks instead of guessing when a type is negated or two types are named", () => {
+    expect(inferContract("developer, not permanent, temporary contract")).toBeUndefined();
+    expect(inferContract("sin contrato indefinido")).toBeUndefined();
+    expect(inferContract("не бессрочный")).toBeUndefined();
+    expect(inferContract("student and freelancer")).toBeUndefined();
+  });
+
   it("skips the contract question during onboarding", async () => {
     h = harness();
     await startOnboarding();
@@ -123,7 +130,7 @@ describe("income sanity", () => {
     h.addRenter(9001);
     await h.press(9001, "pe:income");
     await h.say(9001, "70000");
-    await h.press(9001, "ic:m");
+    await h.press(9001, "ic:m:70000");
     expect(income()).toBe(5833);
     expect(h.tg.texts().at(-2)).toBe("Saved.");
     expect(h.tg.texts().at(-1)).toMatch(/Your profile/);
@@ -134,7 +141,7 @@ describe("income sanity", () => {
     h.addRenter(9001);
     await h.press(9001, "pe:income");
     await h.say(9001, "70.000");
-    await h.press(9001, "ic:k");
+    await h.press(9001, "ic:k:70000");
     expect(income()).toBe(70000);
   });
 
@@ -144,8 +151,21 @@ describe("income sanity", () => {
     await h.press(9001, "pe:income");
     await h.say(9001, "15000");
     expect(income()).toBe(15000);
-    await h.press(9001, "ic:m"); // no open question: ignored
+    await h.press(9001, "ic:m:15000"); // no open question: ignored
     expect(income()).toBe(15000);
+  });
+
+  it("ignores an older prompt's button once a newer figure is pending", async () => {
+    h = harness();
+    h.addRenter(9001);
+    await h.press(9001, "pe:income");
+    await h.say(9001, "70000");
+    await h.say(9001, "120000");
+    await h.press(9001, "ic:m:70000");
+    expect(h.tg.texts().at(-1)).toMatch(/expired/);
+    expect(income()).not.toBe(10000);
+    await h.press(9001, "ic:m:120000");
+    expect(income()).toBe(10000);
   });
 
   it("continues onboarding after the choice", async () => {
@@ -153,7 +173,7 @@ describe("income sanity", () => {
     await startOnboarding();
     await h.say(9001, "dev, permanent");
     await h.say(9001, "70000");
-    await h.press(9001, "ic:m");
+    await h.press(9001, "ic:m:70000");
     expect(h.rt.store.getProfile("9001")?.netMonthlyIncomeEur).toBe(5833);
     expect(h.tg.texts().at(-1)).toMatch(/How many people/);
   });
