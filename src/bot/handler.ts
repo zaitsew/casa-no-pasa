@@ -442,7 +442,10 @@ export function createBot(deps: BotDeps) {
       case "fu": {
         await ack();
         if (a === "start" && store.getProfile(userId)) return ask(userId, chatId, FIELDS[1]!, ui, true);
-        // "Later": drop the buttons so the offer is not left hanging.
+        // "Later": close a questionnaire that Start opened (or the next listing would be read as an answer),
+        // then drop the buttons so the offer is not left hanging.
+        const open = getState(userId).flow;
+        if (open?.kind === "field" && open.onboarding) setFlow(userId, undefined);
         return tg.editMessageReplyMarkup(chatId, msg.message_id, []).catch(() => undefined);
       }
       case "dp": {

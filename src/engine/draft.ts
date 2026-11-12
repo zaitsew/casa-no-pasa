@@ -24,7 +24,8 @@ export interface DraftOptions extends AiOptions {
 
 /** Allow-listed profile fields that are set. Nothing else reaches the model. */
 export function profileSlots(p: Profile): Record<string, string | number> {
-  const slots: Record<string, string | number> = { name: p.name, occupants: p.occupants };
+  const slots: Record<string, string | number> = { name: p.name };
+  if (p.occupants !== undefined) slots.occupants = p.occupants;
   const set = (k: string, v: string | number | undefined) => {
     if (v !== undefined && v !== "") slots[k] = v;
   };
@@ -119,7 +120,7 @@ export function topicIsSet(topic: string, p: Profile): boolean {
     case "pets": return !!p.pets;
     case "contract": return !!p.contract;
     case "income": return p.netMonthlyIncomeEur !== undefined;
-    case "occupants": return p.occupants > 1 || !!p.occupantsNote;
+    case "occupants": return (p.occupants ?? 0) > 1 || !!p.occupantsNote;
     case "smoking": return /fum|smok|tabac/.test(fold([p.pitch, p.occupantsNote, p.occupation].filter(Boolean).join(" ")));
     default: return false;
   }
@@ -165,7 +166,8 @@ export function templateDraft(l: Listing, p: Profile, lang: Lang, dossierUrl?: s
   const contract = p.contract && p.contract !== "other" ? s.contractWord[p.contract] : undefined;
   parts.push(s.who(p.name, p.occupation ? fit(p.occupation, 120) : undefined, contract));
   if (p.netMonthlyIncomeEur !== undefined) parts.push(s.income(formatEur(p.netMonthlyIncomeEur, lang).replace(" €", "")));
-  parts.push(s.occupants(p.occupants, p.occupantsNote));
+  // Household size is a fact: say it only when the renter gave it.
+  if (p.occupants !== undefined) parts.push(s.occupants(p.occupants, p.occupantsNote));
   if (p.pets) parts.push(s.pets(p.pets));
   if (p.moveInFrom) parts.push(s.moveIn(p.moveInFrom));
   if (p.stayMonthsMin) parts.push(s.stay(p.stayMonthsMin));

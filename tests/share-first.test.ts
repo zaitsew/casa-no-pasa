@@ -51,7 +51,8 @@ describe("share first: no questions before the first value", () => {
     h = harness();
     await join("Marta");
     const p = h.rt.store.getProfile(String(ID));
-    expect(p).toMatchObject({ name: "Marta", occupants: 1, replyLang: "es" });
+    expect(p).toMatchObject({ name: "Marta", replyLang: "es" });
+    expect(p?.occupants).toBeUndefined(); // household size is a fact the renter has not given
     expect(p?.occupation).toBeUndefined();
     expect(p?.netMonthlyIncomeEur).toBeUndefined();
     expect(p?.phone).toBeUndefined();
@@ -80,6 +81,7 @@ describe("share first: no questions before the first value", () => {
     const body = String(card.body.text);
     expect(body).toContain("Marta");
     expect(body).not.toMatch(/ingresos|income|€ netos|trabajo|contrato indefinido/i);
+    expect(body).not.toMatch(/yo solo|Seríamos|just me|of us|sol\/a/); // no household claim either
     expect(h.rt.store.usage().listings).toBe(1);
   });
 });
@@ -110,6 +112,18 @@ describe("share first: the one follow-up", () => {
     await h.say(ID, "product manager, permanent contract");
     expect(h.rt.store.getProfile(String(ID))).toMatchObject({ name: "Marta", contract: "permanent" });
     expect(h.tg.texts().at(-1)).toMatch(/Net monthly income/);
+  });
+
+  it("Later after Start closes the questionnaire, so the next listing gets a card", async () => {
+    h = harness();
+    await join("Marta");
+    await h.say(ID, AD_ES);
+    await h.press(ID, "fu:start");
+    await h.press(ID, "fu:later");
+    h.tg.clear();
+    await h.say(ID, `${AD_ES}\nCalle de Verdi 12, otro anuncio`);
+    expect(h.rt.store.getProfile(String(ID))?.occupation).toBeUndefined();
+    expect(h.tg.sent.some((s) => s.method === "sendMessage" && /<pre>/.test(String(s.body.text)))).toBe(true);
   });
 
   it("Later drops the buttons and asks nothing", async () => {
