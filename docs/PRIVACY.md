@@ -4,7 +4,7 @@ Draft: invited renters only until Sprint 3.
 
 ## What Casa No Pasa stores
 
-- Profile facts the renter typed: name, occupation, contract type, net income, number of occupants, pets,
+- Profile facts the renter typed: name (the first name from the Telegram profile unless the renter changes it), occupation, contract type, net income, number of occupants, pets,
   move-in date, availability, phone, and the reply language.
 - Filters (budget, zones, rooms, size, pets, lift, furnished).
 - Listings the renter shared (text, link, extracted facts) and events on them (card shown, copied, sent,

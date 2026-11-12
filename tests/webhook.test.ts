@@ -111,6 +111,7 @@ describe("onboarding", () => {
     expect(h.rt.store.getProfile("9001")).toBeUndefined();
     await h.say(9001, "Ana Prueba");
     expect(h.rt.store.getProfile("9001")?.name).toBe("Ana Prueba");
+    await h.press(9001, "fu:start");
     await h.press(9001, "fs:occupation");
     await h.press(9001, "f:contract:permanent");
     await h.say(9001, "2.800");

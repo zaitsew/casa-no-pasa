@@ -17,6 +17,7 @@ const startOnboarding = async (id = 9001) => {
   await h.say(id, `/start c${id}`);
   await h.press(id, "pn:ok");
   await h.say(id, "Ana");
+  await h.press(id, "fu:start"); // the questionnaire starts from the occupation
 };
 
 describe("contract inference", () => {

@@ -24,7 +24,7 @@ listing ─▶ buttons carry an opaque key that maps to (renter, listing); the h
 ## Tables (SQLite, `src/engine/store.ts`)
 
 users, profiles, filters, listings, occurrences, events (S1.1); invites (code hash, used_by), bot_state
-(open question, ticked documents, privacy acknowledgements), documents (label, mime, size, stored name), grants
+(open question, ticked documents, privacy acknowledgements, first-card flag), documents (label, mime, size, stored name), grants
 (token hash, scope, expiry, revoked, sealed token), inbound_aliases (alias hash), listing_keys (S1.2).
 
 ## Where secrets live

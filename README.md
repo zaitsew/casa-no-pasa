@@ -25,10 +25,19 @@ by invitation until Sprint 3. Not live until the owner deploys it and registers 
 Developers: `npm ci && cp .env.example .env && ./check.sh`. Without the accounts-hub variables the AI is off:
 extraction uses rules and replies use templates. `npm run dev` starts the web part on :3000.
 
+## First run (what a renter sees)
+
+1. The renter opens the invite link and accepts the privacy notice. No questions follow.
+2. The bot creates a profile with only the Telegram first name (it asks for a name only when Telegram sends none).
+3. It sends one intro line, an example card and "Send me any listing". The example is a made-up flat run through
+   the real assessment and the template draft: no AI call, nothing stored, no buttons.
+4. After the first real card the bot offers once: "Want the reply to sound like you?" with Start (the optional
+   questionnaire, from occupation onward) and Later. `/profile` and `/filters` edit everything at any time.
+
 ## What is here
 
 - `src/core/schema.ts`: the engine contract. `src/engine/`: extraction, assessment, drafts, SQLite store, `createEngine().handleInput`.
-- `src/bot/`: Telegram client, webhook handler, onboarding questions, listing cards, strings (en, es, ru).
+- `src/bot/`: Telegram client, webhook handler, first-run welcome, optional profile questions, listing cards, strings (en, es, ru).
 - `src/server/`: encrypted files, dossier grants, runtime wiring. `app/`: webhook, dossier page, inbound email, landing, privacy.
 - `deploy/droplet/`, `scripts/deploy.sh`: the shared droplet. `deploy/cloudflare/email-worker.ts`: the alert-email worker (source only).
 - `docs/PLAN.md`: product, decisions D1-D6, security and privacy. `docs/PRIVACY.md`: what is stored. `docs/ARCHITECTURE.md`: modules and data flow.

@@ -7,6 +7,7 @@ import { sha256Hex } from "../server/auth";
 import type { FileStore } from "../server/files";
 import { activeDossierUrl, createGrant, type Expiry } from "../server/grants";
 import { esc, renderCard, sendCards } from "./cards";
+import { sampleCardText } from "./sample";
 import { applyAnswer, fieldByKey, FIELDS, INCOME_YEARLY_ABOVE, inferContract, nextField, parseInteger, showValue, type Field } from "./fields";
 import { pickUiLang, strings, type UiLang } from "./strings";
 import { buttonRows, type Keyboard, type Tg } from "./tg";
@@ -35,17 +36,19 @@ export interface BotDeps {
 }
 
 type Flow =
-  | { kind: "field"; key: string; onboarding: boolean; pendingIncome?: number }
+  | { kind: "field"; key: string; onboarding: boolean; pendingIncome?: number; welcome?: boolean }
   | { kind: "docs"; label?: string }
   | { kind: "dossier"; docIds: string[]; selected: number[] };
 
 interface State {
   ui?: UiLang;
   ack?: { profile?: boolean; docs?: boolean };
+  /** True once the renter has had their first real card (and the one follow-up that comes with it). */
+  firstCard?: boolean;
   flow?: Flow;
 }
 
-interface TgUser { id: number; language_code?: string }
+interface TgUser { id: number; first_name?: string; language_code?: string }
 interface TgMessage {
   message_id: number;
   date: number;
@@ -93,6 +96,11 @@ export function createBot(deps: BotDeps) {
 
   async function afterAnswer(userId: string, chatId: number, field: Field, ui: UiLang, onboarding: boolean) {
     const S = strings(ui);
+    const open = getState(userId).flow;
+    if (open?.kind === "field" && open.welcome) {
+      setFlow(userId, undefined);
+      return sendWelcome(userId, chatId, ui);
+    }
     if (onboarding) {
       const next = nextField(field.key);
       if (next) {
@@ -151,14 +159,29 @@ export function createBot(deps: BotDeps) {
     await tg.sendMessage(chatId, lines.join("\n"), { keyboard: kb });
   }
 
-  async function startOnboarding(userId: string, chatId: number, ui: UiLang) {
+  /** No questions before the first value: a name-only profile, one intro line, an example card, then "send me a listing". */
+  async function startOnboarding(userId: string, chatId: number, ui: UiLang, firstName?: string) {
     const S = strings(ui);
     const st = getState(userId);
     if (!st.ack?.profile) {
       return tg.sendMessage(chatId, S.privacyNotice(privacyUrl()), { keyboard: [[{ text: S.ok, callback_data: "pn:ok" }]] });
     }
-    await tg.sendMessage(chatId, S.intro);
-    return ask(userId, chatId, FIELDS[0]!, ui, true);
+    if (store.getProfile(userId)) return tg.sendMessage(chatId, S.welcomeBack);
+    const nameField = FIELDS[0]!;
+    const name = firstName?.trim().slice(0, 100);
+    if (name && applyAnswer(store, userId, nameField, name).ok) return sendWelcome(userId, chatId, ui);
+    // No usable first name from Telegram: this is the only question.
+    await ask(userId, chatId, nameField, ui, false);
+    const flow = getState(userId).flow;
+    if (flow?.kind === "field") setFlow(userId, { ...flow, welcome: true });
+  }
+
+  async function sendWelcome(userId: string, chatId: number, ui: UiLang) {
+    const S = strings(ui);
+    const profile = store.getProfile(userId);
+    await tg.sendMessage(chatId, S.welcomeIntro);
+    if (profile) await tg.sendMessage(chatId, sampleCardText(profile, store.getFilters(userId), ui));
+    await tg.sendMessage(chatId, S.sendListing);
   }
 
   // --- Documents ---------------------------------------------------------------------------------
@@ -286,6 +309,12 @@ export function createBot(deps: BotDeps) {
       const results = await engine.handleInput(userId, raw, dossierUrl ? { dossierUrl } : undefined);
       if (results.length === 0) return void (await tg.sendMessage(chatId, S.failed));
       await sendCards(tg, store, userId, chatId, results, ui);
+      // After the first real card only: offer the questionnaire once.
+      const st = getState(userId);
+      if (!st.firstCard && results.some((r) => !r.duplicate)) {
+        putState(userId, { ...st, firstCard: true });
+        await tg.sendMessage(chatId, S.followUp, { keyboard: [[{ text: S.followUpStart, callback_data: "fu:start" }, { text: S.followUpLater, callback_data: "fu:later" }]] });
+      }
     } catch (err) {
       if (err instanceof UserGoneError) return;
       await tg.sendMessage(chatId, S.failed).catch(() => undefined);
@@ -317,7 +346,7 @@ export function createBot(deps: BotDeps) {
       if (code && store.redeemInvite(sha256Hex(code), userId, now().toISOString())) {
         putState(userId, { ui });
         await tg.sendMessage(chatId, S.linked);
-        return startOnboarding(userId, chatId, ui);
+        return startOnboarding(userId, chatId, ui, m.from.first_name);
       }
       return void (await tg.sendMessage(chatId, S.betaOnly));
     }
@@ -330,10 +359,10 @@ export function createBot(deps: BotDeps) {
       setFlow(userId, undefined);
       switch (cmd) {
         case "start":
-          return store.getProfile(userId) ? void (await tg.sendMessage(chatId, S.welcomeBack)) : startOnboarding(userId, chatId, ui);
+          return store.getProfile(userId) ? void (await tg.sendMessage(chatId, S.welcomeBack)) : startOnboarding(userId, chatId, ui, m.from.first_name);
         case "help": return void (await tg.sendMessage(chatId, S.help));
         case "cancel": return void (await tg.sendMessage(chatId, S.cancelled));
-        case "profile": return store.getProfile(userId) ? showSection(userId, chatId, "profile", ui) : startOnboarding(userId, chatId, ui);
+        case "profile": return store.getProfile(userId) ? showSection(userId, chatId, "profile", ui) : startOnboarding(userId, chatId, ui, m.from.first_name);
         case "filters": return showSection(userId, chatId, "filters", ui);
         case "docs": return showDocs(userId, chatId, ui);
         case "dossier": return startDossier(userId, chatId, ui);
@@ -408,7 +437,13 @@ export function createBot(deps: BotDeps) {
         const st = getState(userId);
         putState(userId, { ...st, ack: { ...st.ack, profile: true } });
         await ack();
-        return startOnboarding(userId, chatId, ui);
+        return startOnboarding(userId, chatId, ui, q.from.first_name);
+      }
+      case "fu": {
+        await ack();
+        if (a === "start" && store.getProfile(userId)) return ask(userId, chatId, FIELDS[1]!, ui, true);
+        // "Later": drop the buttons so the offer is not left hanging.
+        return tg.editMessageReplyMarkup(chatId, msg.message_id, []).catch(() => undefined);
       }
       case "dp": {
         const st = getState(userId);
