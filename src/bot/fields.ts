@@ -192,3 +192,27 @@ export function showValue(S: Dict, key: FieldKey, p: Profile | undefined, f: Fil
     case "longOnly": return f.longTermOnly ? S.yes : S.no;
   }
 }
+
+// --- Contract inference -----------------------------------------------------------------------
+
+const CONTRACT_WORDS: Array<[Profile["contract"] & string, string[]]> = [
+  ["permanent", ["permanent", "indefinite", "indefinido", "indefinida", "fijo", "indefinit", "постоянный", "бессрочный"]],
+  ["temporary", ["temporary", "fixed-term", "temporal", "временный", "срочный"]],
+  ["self-employed", ["self-employed", "freelance", "freelancer", "autónomo", "autónoma", "autònom", "фриланс", "ИП", "самозанятый"]],
+  ["student", ["student", "estudiante", "estudiant", "студент"]],
+];
+
+/** The contract type a free-text occupation answer names, if any (whole words, case-insensitive). The earliest mention wins. */
+export function inferContract(text: string): Profile["contract"] | undefined {
+  let best: { at: number; contract: Profile["contract"] } | undefined;
+  for (const [contract, words] of CONTRACT_WORDS) {
+    for (const w of words) {
+      const m = new RegExp(`(?<![\\p{L}\\p{N}])${w}(?![\\p{L}\\p{N}])`, "iu").exec(text);
+      if (m && (!best || m.index < best.at)) best = { at: m.index, contract };
+    }
+  }
+  return best?.contract;
+}
+
+/** Above this a monthly income answer is probably a yearly figure. */
+export const INCOME_YEARLY_ABOVE = 15_000;

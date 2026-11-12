@@ -7,9 +7,9 @@ import { sha256Hex } from "../server/auth";
 import type { FileStore } from "../server/files";
 import { activeDossierUrl, createGrant, type Expiry } from "../server/grants";
 import { esc, renderCard, sendCards } from "./cards";
-import { applyAnswer, fieldByKey, FIELDS, nextField, showValue, type Field } from "./fields";
+import { applyAnswer, fieldByKey, FIELDS, INCOME_YEARLY_ABOVE, inferContract, nextField, parseInteger, showValue, type Field } from "./fields";
 import { pickUiLang, strings, type UiLang } from "./strings";
-import type { Keyboard, Tg } from "./tg";
+import { buttonRows, type Keyboard, type Tg } from "./tg";
 
 /**
  * The webhook brain. Identity is `from.id` of the update and nothing else; only private chats are served.
@@ -35,7 +35,7 @@ export interface BotDeps {
 }
 
 type Flow =
-  | { kind: "field"; key: string; onboarding: boolean }
+  | { kind: "field"; key: string; onboarding: boolean; pendingIncome?: number }
   | { kind: "docs"; label?: string }
   | { kind: "dossier"; docIds: string[]; selected: number[] };
 
@@ -86,7 +86,7 @@ export function createBot(deps: BotDeps) {
     const S = strings(ui);
     setFlow(userId, { kind: "field", key: field.key, onboarding });
     const kb: Keyboard = [];
-    if (field.choices) kb.push(field.choices.map((c) => ({ text: c.label(S), callback_data: `f:${field.key}:${c.value}` })));
+    if (field.choices) kb.push(...buttonRows(field.choices.map((c) => ({ text: c.label(S), callback_data: `f:${field.key}:${c.value}` }))));
     if (field.skippable) kb.push([{ text: S.skip, callback_data: `fs:${field.key}` }]);
     await tg.sendMessage(chatId, S[field.prompt], kb.length ? { keyboard: kb } : undefined);
   }
@@ -100,16 +100,41 @@ export function createBot(deps: BotDeps) {
         return ask(userId, chatId, next, ui, true);
       }
       setFlow(userId, undefined);
-      return tg.sendMessage(chatId, S.onboardingDone);
+      await tg.sendMessage(chatId, S.onboardingDone);
+      // Every answer is one tap from a fix: show the summary with its edit buttons.
+      return showSection(userId, chatId, "profile", ui);
     }
     setFlow(userId, undefined);
     await tg.sendMessage(chatId, S.saved);
     return showSection(userId, chatId, field.section, ui);
   }
 
-  async function submitAnswer(userId: string, chatId: number, field: Field, value: string | undefined, ui: UiLang, onboarding: boolean) {
+  async function submitAnswer(userId: string, chatId: number, field: Field, value: string | undefined, ui: UiLang, onboarding: boolean, confirmed = false) {
+    const S = strings(ui);
+    if (field.key === "income" && value !== undefined && !confirmed) {
+      // A figure this high is most likely yearly: ask before saving anything.
+      const n = parseInteger(value.trim(), 1, 1_000_000);
+      if (n !== undefined && n > INCOME_YEARLY_ABOVE) {
+        const fmt = fmtEur(ui);
+        setFlow(userId, { kind: "field", key: field.key, onboarding, pendingIncome: n });
+        return tg.sendMessage(chatId, S.incomeYearly(fmt(Math.round(n / 12))), {
+          keyboard: [[
+            { text: S.incomeMonthlyBtn(fmt(Math.round(n / 12))), callback_data: "ic:m" },
+            { text: S.incomeKeepBtn(fmt(n)), callback_data: "ic:k" },
+          ]],
+        });
+      }
+    }
     const r = applyAnswer(store, userId, field, value);
-    if (!r.ok) return tg.sendMessage(chatId, strings(ui)[r.error]);
+    if (!r.ok) return tg.sendMessage(chatId, S[r.error]);
+    // "product manager, permanent contract" already answers the contract question.
+    if (field.key === "occupation" && value !== undefined) {
+      const contract = inferContract(value);
+      const contractField = fieldByKey("contract");
+      if (contract && contractField && applyAnswer(store, userId, contractField, contract).ok) {
+        return afterAnswer(userId, chatId, contractField, ui, onboarding);
+      }
+    }
     return afterAnswer(userId, chatId, field, ui, onboarding);
   }
 
@@ -403,6 +428,14 @@ export function createBot(deps: BotDeps) {
         if (flow?.kind !== "field" || flow.key !== field.key) return;
         if (act === "f" && !field.choices?.some((c) => c.value === b)) return;
         return submitAnswer(userId, chatId, field, act === "fs" ? undefined : b, ui, flow.onboarding);
+      }
+      case "ic": {
+        await ack();
+        const flow = getState(userId).flow;
+        const field = fieldByKey("income");
+        if (flow?.kind !== "field" || flow.key !== "income" || flow.pendingIncome === undefined || !field || (a !== "m" && a !== "k")) return;
+        const n = flow.pendingIncome;
+        return submitAnswer(userId, chatId, field, String(a === "m" ? Math.round(n / 12) : n), ui, flow.onboarding, true);
       }
       case "dl": {
         await ack();

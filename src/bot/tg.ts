@@ -12,6 +12,14 @@ export interface InlineButton {
 }
 export type Keyboard = InlineButton[][];
 
+/** Telegram cuts button labels to fit the row: with a long label, put at most two buttons in a row. */
+export function buttonRows(btns: InlineButton[]): Keyboard {
+  const perRow = btns.some((b) => b.text.length > 8) ? 2 : btns.length || 1;
+  const rows: Keyboard = [];
+  for (let i = 0; i < btns.length; i += perRow) rows.push(btns.slice(i, i + perRow));
+  return rows;
+}
+
 export class TgError extends Error {
   constructor(
     readonly method: string,

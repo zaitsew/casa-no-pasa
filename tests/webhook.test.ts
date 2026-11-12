@@ -127,7 +127,8 @@ describe("onboarding", () => {
     await h.say(9001, "Gràcia, Eixample");
     await h.press(9001, "f:needPets:1");
     await h.press(9001, "f:longOnly:1");
-    expect(h.tg.texts().at(-1)).toMatch(/All set/);
+    expect(h.tg.texts().at(-2)).toMatch(/All set/);
+    expect(h.tg.texts().at(-1)).toMatch(/Your profile/); // the summary, with edit buttons, closes onboarding
     expect(h.rt.store.getProfile("9001")).toMatchObject({ name: "Ana Prueba", netMonthlyIncomeEur: 2800, occupants: 2, pets: "a cat", moveInFrom: "2026-12-01", replyLang: "ca", contract: "permanent" });
     expect(h.rt.store.getFilters("9001")).toMatchObject({ maxPriceEur: 1500, minRooms: 2, zones: ["Gràcia", "Eixample"], needPets: true, longTermOnly: true });
   });

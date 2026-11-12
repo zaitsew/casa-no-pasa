@@ -3,7 +3,7 @@ import type { CardResult } from "../engine";
 import { formatEur } from "../engine/templates";
 import type { Store } from "../engine/store";
 import { strings, type UiLang } from "./strings";
-import type { Keyboard, Tg } from "./tg";
+import { buttonRows, type Keyboard, type Tg } from "./tg";
 
 /** Telegram's copy button takes at most 256 characters. */
 export const COPY_TEXT_MAX = 256;
@@ -90,7 +90,7 @@ export function renderCard(r: CardResult, key: string, ui: UiLang, draft: Draft 
   if (l.url) row1.push({ text: S.btnOpen, url: l.url });
   if (draft?.whatsappUrl) row1.push({ text: S.btnWhatsapp, url: draft.whatsappUrl });
   if (draft && draft.text.length <= COPY_TEXT_MAX) row1.push({ text: S.btnCopy, copy_text: { text: draft.text } });
-  if (row1.length) kb.push(row1);
+  kb.push(...buttonRows(row1));
   if (draft) kb.push((["es", "ca", "en"] as const).map((lang) => ({ text: S.langNames[lang]!, callback_data: `l:${lang}:${key}` })));
   kb.push([
     { text: S.btnSent, callback_data: `s:${key}` },
