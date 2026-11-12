@@ -119,8 +119,8 @@ export function createBot(deps: BotDeps) {
         setFlow(userId, { kind: "field", key: field.key, onboarding, pendingIncome: n });
         return tg.sendMessage(chatId, S.incomeYearly(fmt(Math.round(n / 12))), {
           keyboard: [[
-            { text: S.incomeMonthlyBtn(fmt(Math.round(n / 12))), callback_data: "ic:m" },
-            { text: S.incomeKeepBtn(fmt(n)), callback_data: "ic:k" },
+            { text: S.incomeMonthlyBtn(fmt(Math.round(n / 12))), callback_data: `ic:m:${n}` },
+            { text: S.incomeKeepBtn(fmt(n)), callback_data: `ic:k:${n}` },
           ]],
         });
       }
@@ -434,6 +434,8 @@ export function createBot(deps: BotDeps) {
         const flow = getState(userId).flow;
         const field = fieldByKey("income");
         if (flow?.kind !== "field" || flow.key !== "income" || flow.pendingIncome === undefined || !field || (a !== "m" && a !== "k")) return;
+        // The button names the figure it was shown for: an older prompt's button must not save a newer answer.
+        if (b !== String(flow.pendingIncome)) return void (await tg.sendMessage(chatId, S.expiredButton));
         const n = flow.pendingIncome;
         return submitAnswer(userId, chatId, field, String(a === "m" ? Math.round(n / 12) : n), ui, flow.onboarding, true);
       }
