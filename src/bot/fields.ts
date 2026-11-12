@@ -192,3 +192,31 @@ export function showValue(S: Dict, key: FieldKey, p: Profile | undefined, f: Fil
     case "longOnly": return f.longTermOnly ? S.yes : S.no;
   }
 }
+
+// --- Contract inference -----------------------------------------------------------------------
+
+const CONTRACT_WORDS: Array<[Profile["contract"] & string, string[]]> = [
+  ["permanent", ["permanent", "indefinite", "indefinido", "indefinida", "fijo", "indefinit", "постоянный", "бессрочный"]],
+  ["temporary", ["temporary", "fixed-term", "temporal", "временный", "срочный"]],
+  ["self-employed", ["self-employed", "freelance", "freelancer", "autónomo", "autónoma", "autònom", "фриланс", "ИП", "самозанятый"]],
+  ["student", ["student", "estudiante", "estudiant", "студент"]],
+];
+
+const NEGATION = /(?<![\p{L}\p{N}])(not|no|non|sin|ni|не|нет|без)(?![\p{L}\p{N}])/iu;
+
+/**
+ * The contract type a free-text occupation answer names, if exactly one is named (whole words,
+ * case-insensitive). A negation anywhere, or two different types, means "ask": a wrong guess would
+ * become a fact in the reply.
+ */
+export function inferContract(text: string): Profile["contract"] | undefined {
+  if (NEGATION.test(text)) return undefined;
+  const found = new Set<Profile["contract"]>();
+  for (const [contract, words] of CONTRACT_WORDS) {
+    if (words.some((w) => new RegExp(`(?<![\\p{L}\\p{N}])${w}(?![\\p{L}\\p{N}])`, "iu").test(text))) found.add(contract);
+  }
+  return found.size === 1 ? [...found][0] : undefined;
+}
+
+/** Above this a monthly income answer is probably a yearly figure. */
+export const INCOME_YEARLY_ABOVE = 15_000;
