@@ -9,8 +9,8 @@ Catalan or English. The renter sends the reply, always. The tool never sends, ap
 
 ## Status
 
-S1.2: the Telegram bot, the dossier page and the inbound-email endpoint, on top of the S1.1 engine. Access is
-by invitation until Sprint 3. Not live until the owner deploys it and registers the webhook.
+Built: the engine, the Telegram bot, the dossier page and the inbound-email endpoint. Access is by invitation
+only. Nothing runs until the owner deploys it and registers the webhook.
 
 ## Quick start (owner)
 
@@ -34,6 +34,16 @@ extraction uses rules and replies use templates. `npm run dev` starts the web pa
 4. After the first real card the bot offers once: "Want the reply to sound like you?" with Start (the optional
    questionnaire, from occupation onward) and Later. `/profile` and `/filters` edit everything at any time.
 
+## Listing card and commands
+
+- Each card has Open (the ad), WhatsApp and Copy for the draft, Español, Català and English to redraft, and
+  Sent, Viewing and Not for me to record what happened.
+- A renter can send a bare invite code or the whole invite link, as well as the t.me link.
+- Commands: `/profile`, `/filters`, `/docs` (upload documents), `/dossier`, `/revoke`, `/email`, `/delete`, `/help`, `/cancel`.
+- `/dossier` creates a page with the renter's profile and chosen documents. The link expires after 24 hours or 7 days.
+  Documents are encrypted at rest (AES-256-GCM). `/revoke` switches off every link.
+- `/delete` erases everything the bot stores about the renter. Listings and their events are purged after 90 days.
+
 ## What is here
 
 - `src/core/schema.ts`: the engine contract. `src/engine/`: extraction, assessment, drafts, SQLite store, `createEngine().handleInput`.
@@ -54,3 +64,5 @@ Gmail's forwarding confirmation is relayed to the renter in the chat.
 ## Licence
 
 Apache-2.0, see `LICENSE`.
+
+<!-- teyla:reviewed 2026-11-13 -->
