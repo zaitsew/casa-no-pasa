@@ -123,6 +123,42 @@ describe("alert email with several listings", () => {
     ]);
   });
 
+  it("sibling anchors that are themselves the cards keep their URLs and their own facts", async () => {
+    const html = `<a href="https://www.idealista.com/inmueble/100000001/">Piso uno 1.450 &euro;/mes 3 hab. 85 m&sup2;</a><a href="https://www.idealista.com/inmueble/100000002/">Piso dos 990 &euro;/mes 1 hab. 45 m&sup2;</a>`;
+    expect(stripHtml(html)).toContain("https://www.idealista.com/inmueble/100000002/");
+    expect(await facts(html)).toEqual([
+      ["idealista:100000001", 1450, 3, 85],
+      ["idealista:100000002", 990, 1, 45],
+    ]);
+  });
+
+  it("a link summary above detailed cards: each listing gets the facts of its detailed card", async () => {
+    const link = (n: number) => `https://www.idealista.com/inmueble/10000000${n}/`;
+    const summary = `<ul><li><a href="${link(1)}">Piso uno</a></li><li><a href="${link(2)}">Piso dos</a></li></ul>`;
+    const card = (n: number, price: string, rest: string) => `<div><a href="${link(n)}">Piso ${n}</a><p>${price}</p><p>${rest}</p></div>`;
+    expect(await facts(summary + card(1, "1.450 &euro;/mes", "3 hab. 85 m&sup2;") + card(2, "990 &euro;/mes", "1 hab. 45 m&sup2;"))).toEqual([
+      ["idealista:100000001", 1450, 3, 85],
+      ["idealista:100000002", 990, 1, 45],
+    ]);
+  });
+
+  it("20,000 nested divs do not overflow the stack, and the inbound route answers 200", async () => {
+    const deep = `${"<div>".repeat(20_000)}Piso en Gràcia 1.250 &euro;/mes 3 hab. 85 m&sup2;${"</div>".repeat(20_000)}`;
+    const two = `<a href="https://www.idealista.com/inmueble/100000001/">uno 1.100 €/mes</a>${deep}<a href="https://www.idealista.com/inmueble/100000002/">dos 900 €/mes</a>`;
+    expect(() => stripHtml(deep)).not.toThrow();
+    expect(stripHtml(deep)).toContain("1.250 €/mes");
+    expect(() => stripHtml(two)).not.toThrow();
+    const h = harness();
+    try {
+      h.addRenter(7001);
+      h.rt.store.setInboundAlias("7001", sha256Hex(ALIAS));
+      const r = await POST(new Request(`https://x.test/api/inbound/${ALIAS}`, { method: "POST", headers: { "content-type": "application/json", "x-casanopasa-inbound": INBOUND_SECRET }, body: JSON.stringify({ from: "x", subject: "s", text: "", html: two }) }), { params: Promise.resolve({ alias: ALIAS }) });
+      expect(r.status).toBe(200);
+    } finally {
+      h.cleanup();
+    }
+  });
+
   it("decodes &sup2; and numeric entities so the area is read", async () => {
     expect(stripHtml("<p>85 m&sup2; &#178; &#xB2; &#8364;</p>")).toBe("85 m\u00b2 \u00b2 \u00b2 \u20ac");
     const [l] = await extract({ kind: "email", text: stripHtml("<p>Piso en Gr&agrave;cia, 85 m&sup2;, 3 hab. 1.250 &euro;/mes</p>"), subject: "x", receivedAt: NOW }, "u1", OFF);
