@@ -142,7 +142,7 @@ if [ "$DRY" = 1 ]; then
 [dry] ssh ${HOST} 'bash \$tmp/add-product.sh ${NAME} ${PORT} --from \$tmp/droplet --domain ${DOMAIN}; rm -rf \$tmp'
 == every run
 [dry] sed -e s/{{name}}/${NAME}/g -e s/{{port}}/${PORT}/g -e s/{{domain}}/${DOMAIN}/g deploy/droplet/docker-compose.fragment.yml > \$tmpfile
-[dry] rsync -a --chmod=F644 \$tmpfile ${HOST}:${COMPOSE_NEW}
+[dry] chmod 644 \$tmpfile && rsync -a \$tmpfile ${HOST}:${COMPOSE_NEW}
 [dry] ssh ${HOST} 'keep the old file as docker-compose.yml.bak, move the new one in, run docker compose config -q in /srv, restore the old one if it fails'
 [dry] ssh ${HOST} '${UP}'
 DRYEOF
@@ -162,7 +162,8 @@ else
   say "compose file -> ${REMOTE_DIR}/docker-compose.yml"
   rendered="$(mktemp)"
   render_compose "$rendered"
-  rsync -a --chmod=F644 -e "$RSYNC_SSH" "$rendered" "${HOST}:${COMPOSE_NEW}"
+  chmod 644 "$rendered"   # macOS openrsync has no --chmod; rsync -a carries the mode over
+  rsync -a -e "$RSYNC_SSH" "$rendered" "${HOST}:${COMPOSE_NEW}"
   rm -f "$rendered"
   "${SSH[@]}" "$HOST" "$COMPOSE_CHECK"
   "${SSH[@]}" "$HOST" "$UP"
