@@ -78,12 +78,56 @@ describe("alert email with several listings", () => {
     }
   });
 
-  it("reads an HTML-only digest: link targets kept, entities decoded", async () => {
+  const facts = async (html: string) =>
+    (await extract({ kind: "email", text: stripHtml(html), subject: "Alertas", receivedAt: NOW }, "u1", OFF)).map((l) => [l.id, l.priceEur, l.rooms, l.areaM2]);
+
+  it("reads an HTML-only digest: each listing keeps its own price, rooms and area", async () => {
     const plain = stripHtml(DIGEST_HTML);
     expect(plain).toContain("https://www.idealista.com/inmueble/100000001/?xtmc=alert&xtcr=1");
-    expect(plain).toContain("1.450 €/mes");
     expect(plain).not.toContain("color:red");
+    expect(await facts(DIGEST_HTML)).toEqual([
+      ["idealista:100000001", 1450, 3, 85],
+      ["idealista:100000002", 1790, 2, 70],
+    ]);
     expect(stripHtml('<a href="mailto:x@example.com">mail</a> &lt;b&gt; &#65;')).toBe("mail <b> A");
+  });
+
+  it("link around the title, price and size after it", async () => {
+    const card = (n: number, price: string, rest: string) =>
+      `<div class="card"><h3><a href="https://www.idealista.com/inmueble/10000000${n}/">Piso ${n}</a></h3><p>${price}</p><p>${rest}</p></div>`;
+    expect(await facts(card(1, "1.450 &euro;/mes", "3 hab. 85 m&sup2;") + card(2, "990 &euro;/mes", "1 hab. 45 m&#178;") + card(3, "1.100 &euro;/mes", "2 hab. 60 m&#xB2;"))).toEqual([
+      ["idealista:100000001", 1450, 3, 85],
+      ["idealista:100000002", 990, 1, 45],
+      ["idealista:100000003", 1100, 2, 60],
+    ]);
+  });
+
+  it("price before the link inside the same card", async () => {
+    const card = (n: number, price: string, rest: string) =>
+      `<div><span>${price}</span> <span>${rest}</span> <a href="https://www.idealista.com/inmueble/10000000${n}/">Ver anuncio</a></div>`;
+    expect(await facts(card(1, "1.450 &euro;/mes", "3 hab. 85 m&sup2;") + card(2, "990 &euro;/mes", "1 hab. 45 m&sup2;"))).toEqual([
+      ["idealista:100000001", 1450, 3, 85],
+      ["idealista:100000002", 990, 1, 45],
+    ]);
+  });
+
+  it("leaves facts empty when they sit between cards and could belong to either", async () => {
+    const html = `<table>
+      <tr><td><a href="https://www.idealista.com/inmueble/100000001/">Piso uno</a></td></tr>
+      <tr><td>1.450 &euro;/mes, 3 hab. 85 m&sup2;</td></tr>
+      <tr><td><a href="https://www.idealista.com/inmueble/100000002/">Piso dos</a></td></tr>
+      <tr><td>990 &euro;/mes, 1 hab. 45 m&sup2;</td></tr></table>`;
+    expect(await facts(html)).toEqual([
+      ["idealista:100000001", undefined, undefined, undefined],
+      ["idealista:100000002", undefined, undefined, undefined],
+    ]);
+  });
+
+  it("decodes &sup2; and numeric entities so the area is read", async () => {
+    expect(stripHtml("<p>85 m&sup2; &#178; &#xB2; &#8364;</p>")).toBe("85 m\u00b2 \u00b2 \u00b2 \u20ac");
+    const [l] = await extract({ kind: "email", text: stripHtml("<p>Piso en Gr&agrave;cia, 85 m&sup2;, 3 hab. 1.250 &euro;/mes</p>"), subject: "x", receivedAt: NOW }, "u1", OFF);
+    expect(l!.areaM2).toBe(85);
+    expect(l!.priceEur).toBe(1250);
   });
 
   it("caps the cards of one email at 10", async () => {

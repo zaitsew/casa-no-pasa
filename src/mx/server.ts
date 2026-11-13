@@ -17,7 +17,15 @@ import PostalMime from "postal-mime";
 /** Same default as INBOUND_DOMAIN in src/bot/handler.ts (a test keeps them equal); CASANOPASA_INBOUND_DOMAIN overrides. */
 export const DEFAULT_INBOUND_DOMAIN = "in.casanopasa.fabriquefutur.com";
 export const MAX_MESSAGE_BYTES = 2_000_000;
-export const MAX_CLIENTS = 20;
+export const MAX_CLIENTS = 10;
+/**
+ * Messages being read, parsed or posted at once. Memory is bounded by design: a message is at most 2 MB, parsing
+ * holds a few copies of it, so 2 in flight stay well under the container's 96 MB. A third DATA gets 451 and its
+ * bytes are discarded unread; the sender retries later.
+ */
+export const MAX_IN_FLIGHT = 2;
+/** How long RCPT waits for the app to say whether an alias exists. */
+export const RCPT_CHECK_TIMEOUT_MS = 5_000;
 /** Idle time before the connection is dropped. Longer than APP_TIMEOUT_MS: the socket is idle while the app works. */
 export const SOCKET_TIMEOUT_MS = 90_000;
 /** The app reads the email, calls the hub for each listing and sends the cards; this is the most we wait. */
@@ -131,6 +139,8 @@ export interface MxOptions {
   log?: (line: Record<string, string | number>) => void;
   now?: () => number;
   maxClients?: number;
+  maxInFlight?: number;
+  rcptTimeoutMs?: number;
   maxMessageBytes?: number;
   ratePerMinute?: number;
   appTimeoutMs?: number;
@@ -148,6 +158,8 @@ export function createMxServer(opts: MxOptions): SMTPServer {
   const limit = opts.maxMessageBytes ?? MAX_MESSAGE_BYTES;
   const limiter = new RateLimiter(opts.ratePerMinute);
   const appUrl = opts.appUrl.replace(/\/+$/, "");
+  const maxInFlight = opts.maxInFlight ?? MAX_IN_FLIGHT;
+  let inFlight = 0;
 
   const server = new SMTPServer({
     name: domain,
@@ -179,21 +191,49 @@ export function createMxServer(opts: MxOptions): SMTPServer {
 
     onRcptTo(address, _session, cb) {
       if (!opts.secret) return cb(smtpError(451, "4.3.2 Inbound mail is not configured"));
-      if (!aliasFromRecipient(address.address, domain)) {
+      const alias = aliasFromRecipient(address.address, domain);
+      if (!alias) {
         log({ ev: "rcpt_rejected", code: 550 });
         return cb(smtpError(550, "5.1.1 Unknown recipient"));
       }
-      cb();
+      // Ask the app whether this alias is a renter's, so a message to a made-up address is refused here and its
+      // body is never read. Never accept blindly: no answer, or any answer but 204/404, is a temporary failure.
+      void checkAlias(alias).then((reply) => {
+        if (reply.code !== 250) log({ ev: "rcpt_rejected", code: reply.code });
+        cb(reply.code === 250 ? null : smtpError(reply.code, reply.message));
+      });
     },
 
     onData(stream, session, cb) {
+      if (inFlight >= maxInFlight) {
+        log({ ev: "busy", code: 451 });
+        stream.resume(); // read to the end of DATA without keeping a byte
+        stream.once("end", () => cb(smtpError(451, "4.3.2 Too busy, try again later")));
+        return;
+      }
+      inFlight++;
       void receive(stream, session).then(
         (reply) => (reply.code === 250 ? cb(null, reply.message) : cb(smtpError(reply.code, reply.message))),
         () => cb(smtpError(451, "4.3.0 Temporary failure, try again later")),
-      );
+      ).finally(() => inFlight--);
     },
   });
   server.on("error", () => log({ ev: "server_error" }));
+
+  async function checkAlias(alias: string): Promise<Reply> {
+    try {
+      const res = await doFetch(`${appUrl}/api/inbound/${alias}`, {
+        method: "HEAD",
+        headers: { "x-casanopasa-inbound": opts.secret },
+        signal: AbortSignal.timeout(opts.rcptTimeoutMs ?? RCPT_CHECK_TIMEOUT_MS),
+      });
+      if (res.status === 204 || res.status === 200) return { code: 250, message: "2.1.5 OK" };
+      if (res.status === 404) return { code: 550, message: "5.1.1 Unknown recipient" };
+    } catch {
+      /* falls through: temporary failure */
+    }
+    return { code: 451, message: "4.3.0 Temporary failure, try again later" };
+  }
 
   async function receive(stream: SMTPServerDataStream, session: SMTPServerSession): Promise<Reply> {
     const chunks: Buffer[] = [];

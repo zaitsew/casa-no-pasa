@@ -67,12 +67,13 @@ services:
       NODE_ENV: production
       CASANOPASA_APP_URL: http://{{name}}:{{port}}
       MX_PORT: "2525"
-      # The image's NODE_OPTIONS heap cap (192 MB) is for Next; this process has a 64 MB container.
-      NODE_OPTIONS: "--max-old-space-size=40"
+      # The image's NODE_OPTIONS heap cap (192 MB) is for Next. Here: 64 MB heap in a 96 MB container; the receiver
+      # works on at most 2 messages (2 MB each) at once and 10 connections, so its memory is bounded (src/mx/server.ts).
+      NODE_OPTIONS: "--max-old-space-size=64"
     command: ["sh", "/app/mx-start.sh"]
     ports:
       - "25:2525"
-    mem_limit: 64m
+    mem_limit: 96m
     cpus: 0.25
     networks:
       - apps

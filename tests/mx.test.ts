@@ -89,14 +89,20 @@ afterEach(async () => {
   tlsDir = undefined;
 });
 
-async function start(status: number, extra: Partial<MxOptions> = {}) {
+async function start(status: number, extra: Partial<MxOptions> = {}, app: { headStatus?: number; gate?: Promise<void> } = {}) {
   const seen: Seen[] = [];
+  const heads: string[] = [];
   const logs: Record<string, string | number>[] = [];
   http = createHttp((req: IncomingMessage, res) => {
     let raw = "";
     req.on("data", (c) => (raw += c));
-    req.on("end", () => {
+    req.on("end", async () => {
+      if (req.method === "HEAD") {
+        heads.push(`${req.url}|${req.headers["x-casanopasa-inbound"]}`);
+        return void res.writeHead(app.headStatus ?? 204).end();
+      }
       seen.push({ url: req.url ?? "", secret: req.headers["x-casanopasa-inbound"] as string | undefined, body: JSON.parse(raw) });
+      await app.gate;
       res.writeHead(status, { "content-type": "application/json" }).end("{}");
     });
   });
@@ -109,7 +115,7 @@ async function start(status: number, extra: Partial<MxOptions> = {}) {
     nodemailer
       .createTransport({ host: "127.0.0.1", port, secure: false, ...(tls ? { requireTLS: true, tls: { rejectUnauthorized: false } } : { ignoreTLS: true }) })
       .sendMail({ from: `Portal Alerts <${PORTAL}>`, to, subject: "New flats", text: "Piso en Gracia, 1.200 EUR/mes", ...mail });
-  return { seen, logs, port, send };
+  return { seen, heads, logs, port, send };
 }
 
 /** A bare SMTP client: sends lines, collects replies. */
@@ -172,6 +178,70 @@ describe("SMTP receiver", () => {
     await expect(send(`postmaster@${DOMAIN}`)).rejects.toMatchObject({ responseCode: 550 });
     await expect(send(`${ALIAS}@x.${DOMAIN}`)).rejects.toMatchObject({ responseCode: 550 });
     expect(seen).toHaveLength(0);
+  });
+
+  it("asks the app at RCPT and refuses an unknown alias with 550 before any DATA", async () => {
+    const { seen, heads, send, port } = await start(200, {}, { headStatus: 404 });
+    await expect(send(`${ALIAS}@${DOMAIN}`)).rejects.toMatchObject({ responseCode: 550 });
+    expect(heads).toEqual([`/api/inbound/${ALIAS}|${SECRET}`]);
+    // A bare client never gets to DATA: RCPT itself is refused.
+    const c = raw(port);
+    await c.waitFor(/^220 /m);
+    c.say("EHLO t.example.org");
+    await c.waitFor(/^250 /m);
+    c.say(`MAIL FROM:<${PORTAL}>`);
+    await c.waitFor(/^250 /m);
+    c.say(`RCPT TO:<${ALIAS}@${DOMAIN}>`);
+    expect(await c.waitFor(/^\d{3} /m)).toMatch(/^550 /);
+    c.say("DATA");
+    expect(await c.waitFor(/^\d{3} /m)).toMatch(/^503 /);
+    c.socket.destroy();
+    expect(seen).toHaveLength(0);
+  });
+
+  it.each([401, 500, 503])("answers 451 at RCPT when the alias check gets %i", async (headStatus) => {
+    const { send } = await start(200, {}, { headStatus });
+    await expect(send(`${ALIAS}@${DOMAIN}`)).rejects.toMatchObject({ responseCode: 451 });
+  });
+
+  it("answers 451 at RCPT when the alias check times out", async () => {
+    const { send } = await start(200, { rcptTimeoutMs: 100, appUrl: "http://127.0.0.1:1" });
+    await expect(send(`${ALIAS}@${DOMAIN}`)).rejects.toMatchObject({ responseCode: 451 });
+  });
+
+  it("works on at most 2 messages at once: the third DATA gets 451 and is not buffered", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { seen, port } = await start(200, {}, { gate });
+    const sendRaw = async () => {
+      const c = raw(port);
+      await c.waitFor(/^220 /m);
+      c.say("EHLO t.example.org");
+      await c.waitFor(/^250 /m);
+      c.say(`MAIL FROM:<${PORTAL}>`);
+      await c.waitFor(/^250 /m);
+      c.say(`RCPT TO:<${ALIAS}@${DOMAIN}>`);
+      await c.waitFor(/^250 /m);
+      c.say("DATA");
+      await c.waitFor(/^354 /m);
+      c.socket.write("Subject: s\r\n\r\nPiso 1.200 EUR/mes\r\n");
+      c.say(".");
+      return c;
+    };
+    const first = await sendRaw();
+    const second = await sendRaw();
+    for (let i = 0; i < 200 && seen.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(seen).toHaveLength(2); // both are held at the app
+    const third = await sendRaw();
+    expect(await third.waitFor(/^\d{3} /m)).toMatch(/^451 /);
+    release();
+    expect(await first.waitFor(/^\d{3} /m)).toMatch(/^250 /);
+    expect(await second.waitFor(/^\d{3} /m)).toMatch(/^250 /);
+    expect(seen).toHaveLength(2); // the third never reached the app
+    // A slot is free again.
+    const fourth = await sendRaw();
+    expect(await fourth.waitFor(/^\d{3} /m)).toMatch(/^250 /);
+    for (const c of [first, second, third, fourth]) c.socket.destroy();
   });
 
   it("accepts one recipient per message: a second gets 452", async () => {

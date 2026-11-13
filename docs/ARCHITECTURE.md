@@ -15,7 +15,7 @@ landlord ─▶ app/d/<token> (page) and /file/<id> ─▶ src/server/grants ─
   `runtime.ts` builds the engine, bot and file store from the environment.
 - `src/mx/`: the inbound SMTP receiver (`smtp-server` + `postal-mime`), a separate process bundled to `mx.mjs`. It accepts mail only for
   `<32 hex>@in.casanopasa.fabriquefutur.com`, one recipient per message, 2 MB at most, and POSTs the parsed message to
-  `app/api/inbound/<alias>`. It has no AUTH, no relay and sends nothing. It logs counts and status codes, never addresses or bodies.
+  `app/api/inbound/<alias>`. At RCPT it asks the app (`HEAD /api/inbound/<alias>`, 204 known, 404 unknown) so a made-up address is refused before any body is read. At most 2 messages are in flight and 10 clients connected, which bounds memory (96 MB container). It has no AUTH, no relay and sends nothing. It logs counts and status codes, never addresses or bodies.
 - `app/`: route handlers (`api/telegram`, `api/inbound/[alias]`, `api/health`, `d/[token]`, `d/[token]/file/[id]`)
   and two pages (landing, privacy). The dossier page is a route handler because an expired link needs HTTP 410.
 
