@@ -2,12 +2,17 @@
 # on the shared server and adds that path to the root /srv/docker-compose.yml's
 # `include:` list, so the root file is never edited by hand.
 #
-# Caddy (on the external network `apps`) reaches this service by name. Nothing
-# publishes a port to the host.
+# Two services share one image. Caddy (on the external network `apps`) reaches `casanopasa` by name and it
+# publishes no host port. `casanopasa-mx` is the inbound SMTP receiver for alert emails: it publishes host
+# port 25 (container port 2525) and hands each message to `casanopasa` over the `apps` network. DNS needs
+# `MX in.casanopasa.fabriquefutur.com -> casanopasa.fabriquefutur.com (10)`. Host port 25 must be open in the
+# server's firewall and not used by another mail daemon.
 #
-# Redeploy with scripts/deploy.sh. To do it by hand, use the ROOT stack, not this
-# file on its own, so the container stays in the one compose project:
-#   cd /srv && docker compose up -d --build casanopasa
+# add-product.sh renders this file only the first time. scripts/deploy.sh renders it again on every run
+# (same sed substitutions) and uploads it to /srv/{{name}}/docker-compose.yml, so a change here reaches the
+# server. Redeploy with scripts/deploy.sh. To do it by hand, use the ROOT stack, not this file on its own,
+# so the containers stay in the one compose project:
+#   cd /srv && docker compose up -d --build {{name}} {{name}}-mx
 
 services:
   casanopasa:
@@ -43,6 +48,43 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  # Inbound alert email (src/mx/server.ts). Same image, a second entry point: mx-start.sh makes a
+  # self-signed STARTTLS certificate on first start, then runs `node /app/mx.mjs`. It never sends mail.
+  # Log lines hold counts and status codes only. No data volume: nothing is kept on this container.
+  {{name}}-mx:
+    image: casanopasa-web:latest
+    restart: unless-stopped
+    # Same .env as the web service: the shared CASANOPASA_INBOUND_SECRET (and CASANOPASA_INBOUND_DOMAIN, if set).
+    env_file:
+      - /srv/{{name}}/.env
+    environment:
+      NODE_ENV: production
+      CASANOPASA_APP_URL: http://{{name}}:{{port}}
+      MX_PORT: "2525"
+      # The image's NODE_OPTIONS heap cap (192 MB) is for Next; this process has a 64 MB container.
+      NODE_OPTIONS: "--max-old-space-size=40"
+    command: ["sh", "/app/mx-start.sh"]
+    ports:
+      - "25:2525"
+    mem_limit: 64m
+    cpus: 0.25
+    networks:
+      - apps
+    depends_on:
+      - {{name}}
+    healthcheck:
+      # A TCP connect to the SMTP port, from inside the container.
+      test: ["CMD", "node", "-e", "require('net').connect(2525,'127.0.0.1').on('connect',function(){this.destroy();process.exit(0)}).on('error',function(){process.exit(1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     logging:
       driver: json-file
       options:

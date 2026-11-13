@@ -2,7 +2,7 @@
 
 ```
 Telegram ──webhook──▶ app/api/telegram ─▶ src/bot/handler ─▶ src/engine (extract, assess, draft, store)
-Cloudflare Email Worker ─▶ app/api/inbound/<alias> ─┘                    │
+SMTP :25 ─▶ src/mx (casanopasa-mx) ─▶ app/api/inbound/<alias> ─┘          │
 landlord ─▶ app/d/<token> (page) and /file/<id> ─▶ src/server/grants ────┴─▶ SQLite + encrypted files
 ```
 
@@ -13,6 +13,9 @@ landlord ─▶ app/d/<token> (page) and /file/<id> ─▶ src/server/grants ─
   `fields.ts` the profile and filter questions. `cards.ts` the listing card. `strings.ts` en, es, ru.
 - `src/server/`: `auth.ts` constant-time compare. `files.ts` AES-256-GCM. `grants.ts` dossier tokens.
   `runtime.ts` builds the engine, bot and file store from the environment.
+- `src/mx/`: the inbound SMTP receiver (`smtp-server` + `postal-mime`), a separate process bundled to `mx.mjs`. It accepts mail only for
+  `<32 hex>@in.casanopasa.fabriquefutur.com`, one recipient per message, 2 MB at most, and POSTs the parsed message to
+  `app/api/inbound/<alias>`. It has no AUTH, no relay and sends nothing. It logs counts and status codes, never addresses or bodies.
 - `app/`: route handlers (`api/telegram`, `api/inbound/[alias]`, `api/health`, `d/[token]`, `d/[token]/file/[id]`)
   and two pages (landing, privacy). The dossier page is a route handler because an expired link needs HTTP 410.
 

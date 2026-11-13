@@ -30,7 +30,7 @@ The tool never sends a message, never applies, never pays. Agents propose; the r
 | source | how it arrives | sprint |
 |---|---|---|
 | Anything the renter sees (Idealista app push, Instagram story, Facebook group post, a friend's message) | Shared or forwarded to the Telegram bot: a link, text or a screenshot | S1 |
-| Saved-search alert emails from Idealista, Fotocasa, Habitaclia, Pisos.com | The renter's Gmail filter forwards them to a personal inbound address | S1 endpoint, S2 wiring |
+| Saved-search alert emails from Idealista, Fotocasa, Habitaclia, Pisos.com | The renter's Gmail filter forwards them to a personal inbound address, received by our own SMTP receiver on the EU server | S1 endpoint, S2 wiring |
 | Telegram rental groups | Forwarded by the renter; the bot reads a group only where an admin added it | S2 |
 
 Never: scraping Idealista or any portal (their terms forbid it; DataDome blocks it), unofficial Meta clients,
@@ -56,8 +56,8 @@ with a correct draft in under 60 s; the dossier link opens on a phone and expire
 
 ## Sprint 2 — speed and coverage
 
-Alert-email wiring (Cloudflare Email Routing to an inbound address per renter, Gmail forward verification
-relayed by the bot); latency log (arrival → card → marked sent); viewing log and follow-ups; neighbourhood
+Alert-email wiring (an SMTP receiver on our own server for an inbound address per renter, Gmail forward verification
+relayed by the bot; one card per listing in a digest email); latency log (arrival → card → marked sent); viewing log and follow-ups; neighbourhood
 price comparison from Barcelona open data; Telegram group mode.
 
 ## Sprint 3 — other renters

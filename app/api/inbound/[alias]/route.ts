@@ -19,7 +19,7 @@ const BodySchema = z.object({
 });
 
 /**
- * Inbound alert email from the Cloudflare Email Worker. Authenticated by a shared secret header; the renter
+ * Inbound alert email from the SMTP receiver (src/mx/server.ts, the casanopasa-mx service). Authenticated by a shared secret header; the renter
  * is found by a random per-renter alias (stored hashed). Nothing about the renter is revealed on failure.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ alias: string }> }): Promise<Response> {
