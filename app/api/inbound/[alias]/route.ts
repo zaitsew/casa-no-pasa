@@ -19,7 +19,19 @@ const BodySchema = z.object({
 });
 
 /**
- * Inbound alert email from the Cloudflare Email Worker. Authenticated by a shared secret header; the renter
+ * Does this alias belong to a renter? The SMTP receiver asks at RCPT time, so a message for an unknown address is
+ * refused before its body is read. Same secret header as POST; 204 known, 404 unknown, 401 wrong secret. No body.
+ */
+export async function HEAD(req: Request, ctx: { params: Promise<{ alias: string }> }): Promise<Response> {
+  const rt = getRuntime();
+  if (!safeEqual(req.headers.get("x-casanopasa-inbound"), rt.inboundSecret)) return new Response(null, { status: 401 });
+  const { alias } = await ctx.params;
+  const known = /^[0-9a-f]{32}$/.test(alias.toLowerCase()) && !!rt.store.userForAliasHash(sha256Hex(alias.toLowerCase()));
+  return new Response(null, { status: known ? 204 : 404, headers: { "cache-control": "no-store" } });
+}
+
+/**
+ * Inbound alert email from the SMTP receiver (src/mx/server.ts, the casanopasa-mx service). Authenticated by a shared secret header; the renter
  * is found by a random per-renter alias (stored hashed). Nothing about the renter is revealed on failure.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ alias: string }> }): Promise<Response> {

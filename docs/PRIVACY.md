@@ -20,6 +20,11 @@ One EU-region server, in a SQLite file. Model calls go through the accounts hub 
 listing text or screenshot and the profile facts needed for a reply. Documents are never sent to a model.
 Portal pages are never fetched. The tool sends no message on the renter's behalf.
 
+Alert emails the renter forwards are received only by this server (its own SMTP receiver on port 25). They pass
+through memory to the app and are not kept as mail: the raw message is never written to disk, and the receiver logs
+only counts and status codes. What is stored is the listing text and facts the bot extracts, like any shared listing.
+No third party receives, relays or processes the mail.
+
 ## How long
 
 - Listings and their events: 90 days.

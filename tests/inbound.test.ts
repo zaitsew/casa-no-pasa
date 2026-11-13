@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { POST } from "../app/api/inbound/[alias]/route";
+import { HEAD, POST } from "../app/api/inbound/[alias]/route";
 import { sha256Hex } from "../src/server/auth";
 import { GMAIL_FORWARDING_SENDER } from "../src/server/inbound";
 import { harness, INBOUND_SECRET, type Harness } from "./helpers/bot";
@@ -18,7 +18,23 @@ const post = (alias: string, body: unknown, secret: string | null = INBOUND_SECR
 
 const mail = { from: "Portal alerts", subject: "New flat in Gràcia", text: "Piso en Gràcia, 75 m2, 3 hab. 1.250 €/mes. Larga duración." };
 
+const head = (alias: string, secret: string | null = INBOUND_SECRET) =>
+  HEAD(new Request(`https://x.test/api/inbound/${alias}`, { method: "HEAD", headers: secret !== null ? { "x-casanopasa-inbound": secret } : {} }), { params: Promise.resolve({ alias }) });
+
 describe("inbound email", () => {
+  it("HEAD says whether an alias exists: 204 known, 404 unknown or malformed, 401 without the secret, no body", async () => {
+    setup();
+    const known = await head(ALIAS);
+    expect(known.status).toBe(204);
+    expect(await known.text()).toBe("");
+    expect((await head(ALIAS.toUpperCase())).status).toBe(204);
+    expect((await head("f".repeat(32))).status).toBe(404);
+    expect((await head("7001")).status).toBe(404);
+    expect((await head(ALIAS, null)).status).toBe(401);
+    expect((await head(ALIAS, "nope")).status).toBe(401);
+    expect(h.tg.sent).toHaveLength(0);
+  });
+
   it("rejects a missing or wrong secret and an unconfigured server", async () => {
     setup();
     expect((await post(ALIAS, mail, null)).status).toBe(401);

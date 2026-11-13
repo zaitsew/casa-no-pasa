@@ -11,14 +11,19 @@
 # produce the same files. The database is node:sqlite, built into Node 24 (the image
 # is node:24-alpine), so there is no native module to prune. Safe to re-run.
 #
+# Two services run from one image: `casanopasa` (the web part) and `casanopasa-mx` (the inbound SMTP
+# receiver for alert emails, host port 25, bundled to app/mx.mjs with esbuild). add-product.sh renders
+# the compose file only once, so every run renders deploy/droplet/docker-compose.fragment.yml again
+# (same {{name}}/{{port}}/{{domain}} substitutions) and uploads it to /srv/casanopasa/docker-compose.yml.
+#
 # It only writes under /srv/casanopasa/ on the server. add-product.sh appends the
-# `include:` line to /srv/docker-compose.yml itself; nothing here edits another
-# product's files or the shared Caddyfile. The data volume /srv/casanopasa/data is never
+# `include:` line to /srv/docker-compose.yml itself; nothing here edits /srv/docker-compose.yml,
+# another product's files or the shared Caddyfile. The data volume /srv/casanopasa/data is never
 # deleted by a deploy (rsync excludes it).
 set -euo pipefail
 
 NAME="casanopasa"
-PORT="3130"                 # the container's port on the `apps` network; no published host port
+PORT="3130"                 # the web container's port on the `apps` network; no published host port (the mx service publishes 25)
 DOMAIN="fabriquefutur.com"
 HOST="deploy@159.89.99.84"
 SITE_URL="https://${NAME}.${DOMAIN}"
@@ -30,7 +35,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --dry) DRY=1; shift ;;
     --host) HOST="${2:?--host needs user@host}"; shift 2 ;;
-    -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown flag: $1 (try --help)" >&2; exit 64 ;;
   esac
 done
@@ -66,6 +71,8 @@ if [ "$DRY" = 1 ]; then
 [dry] cp -R .next/static/. ${BUNDLE}/.next/static/
 [dry] cp -R public/. ${BUNDLE}/public/        (if public/ exists)
 [dry] cp scripts/invite.mjs ${BUNDLE}/invite.mjs
+[dry] cp deploy/droplet/mx-start.sh ${BUNDLE}/mx-start.sh
+[dry] npm run -s build:mx          (esbuild src/mx/main.ts -> ${BUNDLE}/mx.mjs: one ESM file, node24, dependencies bundled)
 [dry] rm -rf ${BUNDLE}/node_modules/sharp ${BUNDLE}/node_modules/@img       (the Mac's native binaries)
 [dry] cp deploy/droplet/Dockerfile ${BUNDLE}/Dockerfile
 DRYEOF
@@ -84,12 +91,22 @@ else
   # next.config.ts turns off. Its binary is for this Mac, not for linux/amd64.
   rm -rf "$BUNDLE/node_modules/sharp" "$BUNDLE/node_modules/@img"
   cp deploy/droplet/Dockerfile "$BUNDLE/Dockerfile"
+  # The inbound-mail receiver: one ESM file with its dependencies (smtp-server, postal-mime) bundled in.
+  cp deploy/droplet/mx-start.sh "$BUNDLE/mx-start.sh"
+  chmod 755 "$BUNDLE/mx-start.sh"
+  npm run -s build:mx
+  [ -s "$BUNDLE/mx.mjs" ] || { echo "no ${BUNDLE}/mx.mjs: did npm run build:mx fail?" >&2; exit 1; }
+  if grep -qE '\.node["'"'"']' "$BUNDLE/mx.mjs"; then
+    echo "mx.mjs refers to a native module; the droplet cannot run it:" >&2
+    grep -nE '\.node["'"'"']' "$BUNDLE/mx.mjs" | head -5 >&2
+    exit 1
+  fi
   if find "$BUNDLE" -name '*.node' | grep -q .; then
     echo "native modules in the bundle; the droplet cannot run them:" >&2
     find "$BUNDLE" -name '*.node' >&2
     exit 1
   fi
-  echo "  $(du -sh "$BUNDLE" | cut -f1) in ${BUNDLE}"
+  echo "  $(du -sh "$BUNDLE" | cut -f1) in ${BUNDLE}; mx.mjs $(wc -c < "$BUNDLE/mx.mjs" | tr -d ' ') bytes"
 fi
 
 # --- 3. Ship -----------------------------------------------------------------
@@ -107,6 +124,15 @@ run "${SSH[@]}" "$HOST" "mkdir -p ${REMOTE_DIR}/data && docker run --rm -v ${REM
 # Always through the root stack in /srv (the one add-product.sh uses): running
 # the product's compose file on its own would start a second compose project
 # with a second container under the same network alias.
+#
+# add-product.sh renders the compose file only when it is missing, so on later runs a change to the
+# fragment would never reach the server. Render it here with the same substitutions and upload it, on every run.
+render_compose() {  # render_compose <dest> — add-product.sh's render(), for the compose fragment
+  sed -e "s/{{name}}/${NAME}/g" -e "s/{{port}}/${PORT}/g" -e "s/{{domain}}/${DOMAIN}/g" deploy/droplet/docker-compose.fragment.yml > "$1"
+}
+COMPOSE_NEW="${REMOTE_DIR}/docker-compose.yml.new"
+COMPOSE_CHECK="cd ${REMOTE_DIR} && cp docker-compose.yml docker-compose.yml.bak && mv docker-compose.yml.new docker-compose.yml && (cd /srv && docker compose config -q) || { mv ${REMOTE_DIR}/docker-compose.yml.bak ${REMOTE_DIR}/docker-compose.yml; echo 'compose file refused; the previous one is back' >&2; exit 1; }"
+UP="cd /srv && docker compose up -d --build ${NAME} ${NAME}-mx && docker image prune -f --filter label=app=casanopasa >/dev/null"
 if [ "$DRY" = 1 ]; then
   cat <<DRYEOF
 == first run, only if ${REMOTE_DIR}/docker-compose.yml is missing on the server
@@ -115,7 +141,10 @@ if [ "$DRY" = 1 ]; then
 [dry] scp ${ADD_PRODUCT} ${HOST}:\$tmp/add-product.sh
 [dry] ssh ${HOST} 'bash \$tmp/add-product.sh ${NAME} ${PORT} --from \$tmp/droplet --domain ${DOMAIN}; rm -rf \$tmp'
 == every run
-[dry] ssh ${HOST} 'cd /srv && docker compose up -d --build ${NAME} && docker image prune -f --filter label=app=casanopasa'
+[dry] sed -e s/{{name}}/${NAME}/g -e s/{{port}}/${PORT}/g -e s/{{domain}}/${DOMAIN}/g deploy/droplet/docker-compose.fragment.yml > \$tmpfile
+[dry] rsync -a --chmod=F644 \$tmpfile ${HOST}:${COMPOSE_NEW}
+[dry] ssh ${HOST} 'keep the old file as docker-compose.yml.bak, move the new one in, run docker compose config -q in /srv, restore the old one if it fails'
+[dry] ssh ${HOST} '${UP}'
 DRYEOF
 else
   if "${SSH[@]}" "$HOST" "test -f ${REMOTE_DIR}/docker-compose.yml"; then
@@ -128,9 +157,15 @@ else
     rsync -az -e "$RSYNC_SSH" "$ADD_PRODUCT" "${HOST}:${tmp}/add-product.sh"
     "${SSH[@]}" "$HOST" "bash ${tmp}/add-product.sh ${NAME} ${PORT} --from ${tmp}/droplet --domain ${DOMAIN}; rc=\$?; rm -rf ${tmp}; exit \$rc"
     echo "  first run: fill ${REMOTE_DIR}/.env (see deploy/droplet/.env.example), then:"
-    echo "    ssh ${HOST} 'cd /srv && docker compose up -d ${NAME}'"
+    echo "    ssh ${HOST} 'cd /srv && docker compose up -d ${NAME} ${NAME}-mx'"
   fi
-  "${SSH[@]}" "$HOST" "cd /srv && docker compose up -d --build ${NAME} && docker image prune -f --filter label=app=casanopasa >/dev/null"
+  say "compose file -> ${REMOTE_DIR}/docker-compose.yml"
+  rendered="$(mktemp)"
+  render_compose "$rendered"
+  rsync -a --chmod=F644 -e "$RSYNC_SSH" "$rendered" "${HOST}:${COMPOSE_NEW}"
+  rm -f "$rendered"
+  "${SSH[@]}" "$HOST" "$COMPOSE_CHECK"
+  "${SSH[@]}" "$HOST" "$UP"
 fi
 
 # --- 5. Wait for it to answer ------------------------------------------------

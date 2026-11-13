@@ -5,7 +5,9 @@
 # standalone output into dist/droplet/app/ (server.js, .next/static, public, data,
 # node_modules) and rsyncs it to /srv/casanopasa/app/. This file is copied into
 # that directory and is the whole build: one COPY, no compiler, no native modules
-# (the database is Node's built-in node:sqlite, which needs Node 24 or newer).
+# (the database is Node's built-in node:sqlite, which needs Node 24 or newer). The same image runs the
+# inbound-mail receiver as a second service: mx-start.sh, then `node /app/mx.mjs`, a single-file bundle
+# (npm run build:mx; scripts/deploy.sh).
 #
 #   docker build --platform linux/amd64 -t casanopasa-web dist/droplet/app
 
@@ -13,6 +15,9 @@ FROM node:24-alpine
 
 # Lets deploy.sh prune old Casa No Pasa images without touching another product's.
 LABEL app=casanopasa
+
+# openssl makes the self-signed STARTTLS certificate of the inbound-mail container (mx-start.sh).
+RUN apk add --no-cache openssl
 
 WORKDIR /app
 # 3130 is Casa No Pasa's port on the shared `apps` network (rumbo 3110, batrack 3120).

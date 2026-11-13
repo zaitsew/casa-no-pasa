@@ -9,8 +9,8 @@ Catalan or English. The renter sends the reply, always. The tool never sends, ap
 
 ## Status
 
-Built: the engine, the Telegram bot, the dossier page and the inbound-email endpoint. Access is by invitation
-only. Nothing runs until the owner deploys it and registers the webhook.
+Built: the engine, the Telegram bot, the dossier page, and the inbound-email endpoint with its SMTP receiver.
+Access is by invitation only. Nothing runs until the owner deploys it and registers the webhook.
 
 ## Quick start (owner)
 
@@ -49,17 +49,31 @@ extraction uses rules and replies use templates. `npm run dev` starts the web pa
 - `src/core/schema.ts`: the engine contract. `src/engine/`: extraction, assessment, drafts, SQLite store, `createEngine().handleInput`.
 - `src/bot/`: Telegram client, webhook handler, first-run welcome, optional profile questions, listing cards, strings (en, es, ru).
 - `src/server/`: encrypted files, dossier grants, runtime wiring. `app/`: webhook, dossier page, inbound email, landing, privacy.
-- `deploy/droplet/`, `scripts/deploy.sh`: the shared droplet. `deploy/cloudflare/email-worker.ts`: the alert-email worker (source only).
+- `deploy/droplet/`, `scripts/deploy.sh`: the shared droplet. `src/mx/`: the inbound SMTP receiver for alert emails.
 - `docs/PLAN.md`: product, decisions D1-D6, security and privacy. `docs/PRIVACY.md`: what is stored. `docs/ARCHITECTURE.md`: modules and data flow.
 
-## Alert emails (a later setup step)
+## Alert emails
 
-The endpoint `POST /api/inbound/<alias>` exists; nothing feeds it yet. To wire it: set `CASANOPASA_INBOUND_SECRET`
-on the droplet, add the domain `in.casanopasa.fabriquefutur.com` to Cloudflare Email Routing with a catch-all
-rule that runs a Worker built from `deploy/cloudflare/email-worker.ts` (variable `CASANOPASA_URL`, secret
-`CASANOPASA_INBOUND_SECRET`, dependency `postal-mime`). The renter sends `/email` to the bot to get a personal
-address and sets a Gmail filter that forwards Idealista, Fotocasa, Habitaclia and Pisos.com alerts to it.
-Gmail's forwarding confirmation is relayed to the renter in the chat.
+Idealista, Fotocasa, Habitaclia and Pisos.com send saved-search alerts by email. One email often lists several
+flats; each flat becomes its own card (at most 10 per email).
+
+What the renter does:
+
+1. Send `/email` to the bot. It replies with a personal address, `<32 hex characters>@in.casanopasa.fabriquefutur.com`.
+2. In Gmail, add that address under Settings > Forwarding and POP/IMAP > Add a forwarding address. Gmail sends a
+   confirmation email to it; the bot relays that email, with the code, to the chat. Enter the code in Gmail.
+3. Create a filter with `from:(idealista.com OR fotocasa.es OR habitaclia.com OR pisos.com)` and the action
+   "Forward it to" that address.
+
+How it works: the `casanopasa-mx` service (`src/mx/server.ts`, the same image as the web part, host port 25) receives
+the mail over SMTP, accepts only that address pattern, and POSTs `{from, subject, text, html?}` to
+`/api/inbound/<alias>` with the `x-casanopasa-inbound` secret. It has no AUTH, never relays and never sends mail;
+messages over 2 MB are refused. Bodies and addresses are never logged.
+
+Setup (owner): set `CASANOPASA_INBOUND_SECRET` in the droplet's `.env`, run `./scripts/deploy.sh` (it builds
+`dist/droplet/app/mx.mjs`, re-renders the compose file and starts both services), open port 25 on the server, and add the
+DNS record `MX in.casanopasa.fabriquefutur.com -> casanopasa.fabriquefutur.com (priority 10)`.
+Local check: `npm run build:mx && MX_PORT=2525 CASANOPASA_APP_URL=http://localhost:3000 CASANOPASA_INBOUND_SECRET=... node dist/droplet/app/mx.mjs`.
 
 ## Licence
 
