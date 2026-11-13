@@ -25,8 +25,12 @@ function decodeEntities(s: string): string {
 
 // --- HTML to text ------------------------------------------------------------------------------------
 
+/** Elements nested deeper than this are not opened: their text stays in the element at this depth. Bounds recursion. */
+const MAX_DEPTH = 200;
+
 interface HNode {
   tag: string;
+  depth: number;
   parent: HNode | null;
   kids: (HNode | string)[];
   href?: string;
@@ -44,7 +48,7 @@ function listingKey(url: string): string | null {
 
 /** A small forgiving tree: unclosed tags are closed by their parent's end, stray end tags are ignored. */
 function parseHtml(html: string): HNode {
-  const root: HNode = { tag: "#root", parent: null, kids: [], keys: new Set() };
+  const root: HNode = { tag: "#root", depth: 0, parent: null, kids: [], keys: new Set() };
   let cur = root;
   for (const m of html.matchAll(/<!--[\s\S]*?-->|<(\/?)([a-z][a-z0-9]*)\b([^>]*)>|[^<]+|</gi)) {
     const [whole, close, name, attrs] = m;
@@ -63,7 +67,8 @@ function parseHtml(html: string): HNode {
       }
       continue;
     }
-    const node: HNode = { tag, parent: cur, kids: [], keys: new Set() };
+    if (cur.depth >= MAX_DEPTH && !VOID.has(tag)) continue;
+    const node: HNode = { tag, depth: cur.depth + 1, parent: cur, kids: [], keys: new Set() };
     if (tag === "a") {
       const h = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(attrs ?? "");
       const url = decodeEntities((h?.[1] ?? h?.[2] ?? "").trim());
@@ -108,6 +113,12 @@ function render(n: HNode, urls: (href: string) => boolean): string {
   return out;
 }
 
+/** A node's text, including the node's own link target when it is itself a link. */
+function renderNode(n: HNode, urls: (href: string) => boolean): string {
+  const inner = render(n, urls);
+  return n.href && urls(n.href) ? `${inner} ${n.href} ` : inner;
+}
+
 const tidy = (s: string) =>
   s.replace(/[ \t ]+/g, " ").replace(/ ?\n ?/g, "\n").replace(/\n+/g, "\n").trim();
 
@@ -116,6 +127,7 @@ const tidy = (s: string) =>
  *
  * With two or more distinct portal listings, each listing's text is its own "card": the largest element that
  * holds exactly one listing's link, whatever the layout (link around the title, price before or after the link).
+ * When a listing appears in several places (a link summary, then detailed cards) the fullest card is used.
  * Cards come out as paragraphs separated by a blank line, with the link target inside; a paragraph is never split.
  * Text outside every card is dropped, so a price that sits between cards (and could belong to either) is left out
  * and the card shows it as unknown, never as the neighbour's (D2). With fewer than two listings the whole text is
@@ -125,29 +137,30 @@ export function stripHtml(html: string): string {
   const root = parseHtml(html);
   if (root.keys.size < 2) return tidy(render(root, () => true));
 
-  const cards: HNode[] = [];
-  const done = new Set<string>();
+
+  // Every element that could be a listing's card, per listing: the largest element holding only that listing's link.
+  // A listing can appear more than once (a summary list, then detailed cards); the fullest candidate wins below.
+  const candidates = new Map<string, Set<HNode>>();
   const visit = (n: HNode): void => {
     const own = n.href ? listingKey(n.href) : null;
     const key = own ?? (n.keys.size === 1 && n.kids.some((k) => typeof k === "string") ? [...n.keys][0]! : null);
-    if (key && !done.has(key)) {
-      done.add(key);
+    if (key) {
       let top = n;
       while (top.parent && top.parent.keys.size === 1) top = top.parent;
-      cards.push(top);
-      return;
+      (candidates.get(key) ?? candidates.set(key, new Set()).get(key)!).add(top);
     }
-    n.kids.forEach((k) => typeof k !== "string" && visit(k));
+    for (const k of n.kids) if (typeof k !== "string") visit(k);
   };
   visit(root);
 
   const out: string[] = [];
-  const used = new Set<HNode>();
-  for (const c of cards) {
-    if (used.has(c)) continue;
-    used.add(c);
-    const text = tidy(render(c, (href) => listingKey(href) !== null));
-    if (text) out.push(text);
+  for (const nodes of candidates.values()) {
+    let best = "";
+    for (const c of nodes) {
+      const text = tidy(renderNode(c, (href) => listingKey(href) !== null));
+      if (text.length > best.length) best = text;
+    }
+    if (best) out.push(best);
   }
   return out.join("\n\n");
 }

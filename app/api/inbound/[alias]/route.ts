@@ -51,7 +51,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ alias: string 
   }
   purgeIfDue(rt);
   // The engine refuses text over 50,000 characters; a long newsletter is cut, not rejected.
-  const text = truncateText(body.text.trim() || (body.html ? stripHtml(body.html) : ""));
+  let text: string;
+  try {
+    text = truncateText(body.text.trim() || (body.html ? stripHtml(body.html) : ""));
+  } catch (err) {
+    // Unreadable markup will not get better on a retry: accept the message and keep nothing (a 5xx would make the
+    // SMTP receiver answer 451 and the sender retry for days).
+    console.error(`[casanopasa] inbound html unreadable: ${(err as Error).name}`);
+    return json({ ok: true, ignored: "unreadable" });
+  }
   const chatId = Number(userId);
   const ui: UiLang = ((rt.store.getState(userId) as { ui?: UiLang } | undefined)?.ui) ?? "en";
 
