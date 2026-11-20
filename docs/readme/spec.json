@@ -1,0 +1,23 @@
+{
+  "name": "Casa No Pasa",
+  "tagline": "No dejamos pasar ni una casa.",
+  "summary": "Reply first and well to new Barcelona flat listings, in Spanish, Catalan or English.",
+  "accent": "#b4411f",
+  "accent_dark": "#f08a63",
+  "pills": ["Open source", "Invite only"],
+  "highlights": [
+    {"label": "INPUT", "title": "Share a link, text or screenshot", "text": "The Telegram bot reads any listing ad you send it."},
+    {"label": "CHECK", "title": "Scam and contract flags", "text": "Red flags, seasonal-contract warnings and a fit score per flat."},
+    {"label": "REPLY", "title": "A draft in your language", "text": "Spanish, Catalan or English. You send it, always."},
+    {"label": "RENT", "title": "Barcelona rent-cap note", "text": "Links to the official rent index on each card."},
+    {"label": "DOSSIER", "title": "Tenant file, encrypted", "text": "Documents sit behind a link that expires in 24 hours or 7 days."},
+    {"label": "ALERTS", "title": "Alert emails become cards", "text": "Forwarded portal alerts turn into one card per flat."}
+  ],
+  "steps": [
+    {"title": "Get an invite", "text": "Open the t.me link, accept the privacy notice."},
+    {"title": "Share a listing", "text": "Send a link, text or screenshot."},
+    {"title": "Read the card", "text": "Verdict, flags and a ready reply."},
+    {"title": "Send it yourself", "text": "WhatsApp or copy; the tool never sends."},
+    {"title": "Share your dossier", "text": "An expiring link with chosen documents."}
+  ]
+}

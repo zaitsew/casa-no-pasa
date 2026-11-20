@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="288" viewBox="0 0 880 288" role="img" aria-label="Casa No Pasa. No dejamos pasar ni una casa. Reply first and well to new Barcelona flat listings, in Spanish, Catalan or English. Beta, App, Telegram, Web, Open source, Invite only.">
+<style>text{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',Inter,'Segoe UI',Helvetica,Arial,sans-serif;fill:#14161D}.m{fill:#585E6D}.cap{font-size:11px;letter-spacing:.06em}.b{font-weight:600}</style>
+<rect x="0.5" y="0.5" width="879" height="287" rx="12" fill="#FFFFFF" stroke="#DCDEE5"/>
+<clipPath id="card"><rect x="0.5" y="0.5" width="879" height="287" rx="12"/></clipPath>
+<defs><radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#b4411f" stop-opacity=".22"/><stop offset="1" stop-color="#b4411f" stop-opacity="0"/></radialGradient></defs>
+<g clip-path="url(#card)">
+<circle cx="800" cy="144.0" r="170" fill="url(#glow)"/>
+<rect x="687.0" y="31.0" width="226" height="226" rx="63.3" fill="#b4411f" fill-opacity="0.05" transform="rotate(12 800 144.0)"/>
+<rect x="718.0" y="62.0" width="164" height="164" rx="45.9" fill="#b4411f" fill-opacity="0.08" transform="rotate(12 800 144.0)"/>
+<rect x="748.0" y="92.0" width="104" height="104" rx="29.1" fill="#b4411f" fill-opacity="0.13" transform="rotate(12 800 144.0)"/>
+<rect x="772" y="116.0" width="56" height="56" rx="16" fill="#b4411f" fill-opacity=".24" transform="rotate(12 800 144.0)"/>
+</g>
+<rect x="40" y="44" width="72" height="72" rx="16" fill="#b4411f"/>
+<text x="76" y="92" font-size="34" text-anchor="middle" class="b" style="fill:#FFFFFF">C</text>
+<text class="b" x="136" y="76" font-size="40">Casa No Pasa</text>
+<text x="136" y="112" font-size="19">No dejamos pasar ni una casa.</text>
+<text class="m" x="136" y="140" font-size="14">Reply first and well to new Barcelona flat listings, in Spanish, Catalan or</text>
+<text class="m" x="136" y="160" font-size="14">English.</text>
+<rect x="136.0" y="182" width="70.8" height="28" rx="14" fill="#A65400" fill-opacity=".16"/>
+<circle cx="151.0" cy="196" r="4" fill="#A65400"/>
+<text class="b" x="164.0" y="201" font-size="13" style="fill:#A65400">Beta</text>
+<rect x="214.8" y="182" width="52.6" height="28" rx="14" fill="#F4F5F8" stroke="#DCDEE5"/>
+<text class="m b" x="228.8" y="201" font-size="13">App</text>
+<rect x="275.4" y="182" width="88.2" height="28" rx="14" fill="#F4F5F8" stroke="#DCDEE5"/>
+<text class="m b" x="289.4" y="201" font-size="13">Telegram</text>
+<rect x="371.6" y="182" width="55.3" height="28" rx="14" fill="#F4F5F8" stroke="#DCDEE5"/>
+<text class="m b" x="385.6" y="201" font-size="13">Web</text>
+<rect x="434.9" y="182" width="106.6" height="28" rx="14" fill="#F4F5F8" stroke="#DCDEE5"/>
+<text class="m b" x="448.9" y="201" font-size="13">Open source</text>
+<rect x="136.0" y="220" width="94.5" height="28" rx="14" fill="#F4F5F8" stroke="#DCDEE5"/>
+<text class="m b" x="150.0" y="239" font-size="13">Invite only</text>
+</svg>

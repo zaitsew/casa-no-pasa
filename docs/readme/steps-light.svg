@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="208" viewBox="0 0 880 208" role="img" aria-label="How it works. 1. Get an invite. Open the t.me link, accept the privacy notice. 2. Share a listing. Send a link, text or screenshot. 3. Read the card. Verdict, flags and a ready reply. 4. Send it yourself. WhatsApp or copy; the tool never sends. 5. Share your dossier. An expiring link with chosen documents.">
+<style>text{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',Inter,'Segoe UI',Helvetica,Arial,sans-serif;fill:#14161D}.m{fill:#585E6D}.cap{font-size:11px;letter-spacing:.06em}.b{font-weight:600}</style>
+<rect x="0.5" y="0.5" width="879" height="207" rx="12" fill="#FFFFFF" stroke="#DCDEE5"/>
+<line x1="90.0" x2="190.0" y1="52" y2="52" stroke="#DCDEE5" stroke-width="2" stroke-linecap="round"/>
+<circle cx="60.0" cy="52" r="20" fill="#b4411f"/>
+<text class="b" x="60.0" y="58" font-size="17" text-anchor="middle" style="fill:#FFFFFF">1</text>
+<text class="b" x="40.0" y="98" font-size="15.5">Get an invite</text>
+<text class="m" x="40.0" y="120" font-size="13.5">Open the t.me link,</text>
+<text class="m" x="40.0" y="139" font-size="13.5">accept the privacy</text>
+<text class="m" x="40.0" y="158" font-size="13.5">notice.</text>
+<line x1="250.0" x2="350.0" y1="52" y2="52" stroke="#DCDEE5" stroke-width="2" stroke-linecap="round"/>
+<circle cx="220.0" cy="52" r="20" fill="#b4411f"/>
+<text class="b" x="220.0" y="58" font-size="17" text-anchor="middle" style="fill:#FFFFFF">2</text>
+<text class="b" x="200.0" y="98" font-size="15.5">Share a listing</text>
+<text class="m" x="200.0" y="120" font-size="13.5">Send a link, text or</text>
+<text class="m" x="200.0" y="139" font-size="13.5">screenshot.</text>
+<line x1="410.0" x2="510.0" y1="52" y2="52" stroke="#DCDEE5" stroke-width="2" stroke-linecap="round"/>
+<circle cx="380.0" cy="52" r="20" fill="#b4411f"/>
+<text class="b" x="380.0" y="58" font-size="17" text-anchor="middle" style="fill:#FFFFFF">3</text>
+<text class="b" x="360.0" y="98" font-size="15.5">Read the card</text>
+<text class="m" x="360.0" y="120" font-size="13.5">Verdict, flags and a</text>
+<text class="m" x="360.0" y="139" font-size="13.5">ready reply.</text>
+<line x1="570.0" x2="670.0" y1="52" y2="52" stroke="#DCDEE5" stroke-width="2" stroke-linecap="round"/>
+<circle cx="540.0" cy="52" r="20" fill="#b4411f"/>
+<text class="b" x="540.0" y="58" font-size="17" text-anchor="middle" style="fill:#FFFFFF">4</text>
+<text class="b" x="520.0" y="98" font-size="15.5">Send it yourself</text>
+<text class="m" x="520.0" y="120" font-size="13.5">WhatsApp or copy;</text>
+<text class="m" x="520.0" y="139" font-size="13.5">the tool never sends.</text>
+<circle cx="700.0" cy="52" r="20" fill="#b4411f"/>
+<text class="b" x="700.0" y="58" font-size="17" text-anchor="middle" style="fill:#FFFFFF">5</text>
+<text class="b" x="680.0" y="98" font-size="15.5">Share your</text>
+<text class="b" x="680.0" y="118" font-size="15.5">dossier</text>
+<text class="m" x="680.0" y="140" font-size="13.5">An expiring link with</text>
+<text class="m" x="680.0" y="159" font-size="13.5">chosen documents.</text>
+</svg>
