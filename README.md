@@ -133,6 +133,8 @@ npm run build:mx && MX_PORT=2525 CASANOPASA_APP_URL=http://localhost:3000 CASANO
 
 Apache-2.0, see [`LICENSE`](LICENSE).
 
+<sub>"640K ought to be enough for anyone": a quote nobody can source. The inbound mail limit here is 2 MB, about 3.2 times that.</sub>
+
 <sub>Built by <a href="https://github.com/zaitsew">zaitsew</a> with a fleet of AI agents.</sub>
 
 <!-- teyla:reviewed 2026-11-13 -->
