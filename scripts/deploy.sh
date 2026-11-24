@@ -42,8 +42,11 @@ done
 
 cd "$(dirname "$0")/.."
 BUNDLE="dist/droplet/app"
-SSH=(ssh -o BatchMode=yes -o ConnectTimeout=10)
-RSYNC_SSH="ssh -o BatchMode=yes -o ConnectTimeout=10"
+# One multiplexed connection for every ssh/rsync call: the droplet rate-limits new SSH connections
+# and dropped port 22 for ~5 minutes mid-deploy when each step opened its own.
+SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=$HOME/.ssh/cm-casanopasa-%C -o ControlPersist=120"
+SSH=(ssh $SSH_OPTS)
+RSYNC_SSH="ssh $SSH_OPTS"
 
 # run <command...> — print it in --dry mode, run it otherwise.
 run() {
