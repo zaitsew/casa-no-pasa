@@ -21,7 +21,7 @@ export function sampleListing() {
     areaM2: 62,
     rooms: 2,
     contract: "long",
-    description: "Example flat in Gràcia, 62 m², 2 bedrooms. Long-term rental. Reserva con una señal de 500 € antes de ver el piso.",
+    description: "Example flat in Gràcia, 62 m², 2 bedrooms. Long-term rental. Vivo en el extranjero, las visitas las hace mi hermana.",
     evidence: {},
     seenAt: SAMPLE_AT,
   });
@@ -37,6 +37,7 @@ export function sampleCardText(profile: Profile, filters: Filters, ui: UiLang): 
     "example",
     ui,
     draft,
+    { filters },
   );
   return `${S.sampleHeader}\n\n${card.text}`;
 }

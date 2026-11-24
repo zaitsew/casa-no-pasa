@@ -33,7 +33,8 @@ describe("share first: no questions before the first value", () => {
     expect(after[0]).toMatch(/I help you answer flat listings first/);
     expect(after[1]).toMatch(/^📋 <b>Example<\/b>/);
     expect(after[1]).toContain("Gràcia");
-    expect(after[1]).toMatch(/⛔/u); // the real assessment flags the deposit before a viewing
+    expect(after[1]).toMatch(/⚠️ .*abroad/u); // the real assessment flags the absent owner...
+    expect(after[1]).toContain("<i>«Vivo en el extranjero»</i>"); // ...and quotes the ad's own words
     expect(after[1]).toContain("Marta"); // the template draft uses the renter's own name
     expect(after[2]).toBe("Send me any listing: a link, text, a screenshot, or a forwarded post.");
     for (const q of [/your name/i, /What do you do/, /Contract type/, /income/i, /Maximum rent/]) expect(after.join("\n")).not.toMatch(q);
