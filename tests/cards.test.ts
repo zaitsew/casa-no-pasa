@@ -18,7 +18,8 @@ describe("listing card", () => {
     h.rt.store.setFilters("7001", filters({ maxPriceEur: 1000, zones: ["Eixample"] }));
     await h.say(7001, `${AD_ES}\nhttps://www.idealista.com/inmueble/98765432/`);
     const text = String(card(h).body.text);
-    expect(text).toMatch(/^[🟢🟡🔴] <b>\d+<\/b>\/100/u);
+    expect(text).toMatch(/^[🟢🟡🔴] <b>(Reply now|Check first|Probably skip|Skip: likely scam)<\/b>\n/u);
+    expect(text).not.toMatch(/\/100/);
     expect(text).toContain("1,250");
     expect(text).toContain("75 m²");
     expect(text).toContain("Idealista");
@@ -132,5 +133,36 @@ describe("card buttons", () => {
     await sendCard();
     await h.press(7001, "s:bogus-key");
     expect(h.rt.store.events("7001").map((e) => e.kind)).toEqual(["card_shown"]);
+  });
+
+  it("leads with the verdict and gives fit reasons from the filters", async () => {
+    h = harness();
+    h.addRenter(7001);
+    h.rt.store.setFilters("7001", filters({ maxPriceEur: 1300, zones: ["Eixample"] }));
+    await h.say(7001, `${AD_ES}\nhttps://www.idealista.com/inmueble/98765432/`);
+    const text = String(card(h).body.text);
+    const [head, facts] = text.split("\n");
+    expect(head).toMatch(/^[🟢🟡] <b>(Reply now|Check first)<\/b>$/u);
+    expect(facts).toMatch(/^<b>1,250 €<\/b> · /);
+    expect(text).toContain("✅ 50 € under your budget");
+    expect(text).not.toMatch(/safe|no scam/i); // D3: flags explain, never clear
+  });
+
+  it("holds the reply on a likely scam and quotes the ad", async () => {
+    h = harness();
+    h.addRenter(7001);
+    await h.say(7001, "Piso en Gràcia, 900 euros al mes, 2 habitaciones. Hay que pagar la fianza antes de ver el piso.\nhttps://www.idealista.com/inmueble/98765433/");
+    const text = String(card(h).body.text);
+    expect(text).toMatch(/^🔴 <b>Skip: likely scam<\/b>/u);
+    expect(text).toMatch(/⛔ .*\n<i>«[^»]+»<\/i>/u);
+    expect(text).not.toContain("<pre>");
+    expect(text).toContain("No reply yet: read the signals above first.");
+    const labels = buttons(h.tg.keyboardOf(card(h))).map((b) => b.text);
+    expect(labels).toEqual(["Open listing", "Show reply anyway", "Not for me"]);
+    const anyway = buttons(h.tg.keyboardOf(card(h))).find((b) => b.text === "Show reply anyway")!;
+    await h.press(7001, anyway.callback_data!);
+    const edited = h.tg.last("editMessageText")!;
+    expect(String(edited.body.text)).toMatch(/^🔴 <b>Skip: likely scam<\/b>/u); // the flag stays (D3)
+    expect(String(edited.body.text)).toContain("<pre>");
   });
 });

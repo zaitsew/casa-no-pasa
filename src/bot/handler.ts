@@ -421,9 +421,10 @@ export function createBot(deps: BotDeps) {
         await ack();
         const dossierUrl = activeDossierUrl(store, deps.filesKey, deps.publicUrl, userId, now());
         const d = await engine.draft(listing, profile, { lang, ...(dossierUrl ? { dossierUrl } : {}) });
+        const filters = store.getFilters(userId);
         const card = renderCard(
-          { listing, assessment: engine.assess(listing, store.getFilters(userId)), draft: d, duplicate: false, possibleDuplicate: false, secondsToCard: 0 },
-          key, ui, d,
+          { listing, assessment: engine.assess(listing, filters), draft: d, duplicate: false, possibleDuplicate: false, secondsToCard: 0 },
+          key, ui, d, { filters, forceDraft: true },
         );
         return tg.editMessageText(chatId, msg.message_id, card.text, { keyboard: card.keyboard });
       }
