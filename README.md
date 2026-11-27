@@ -133,7 +133,24 @@ npm run build:mx && MX_PORT=2525 CASANOPASA_APP_URL=http://localhost:3000 CASANO
 
 Apache-2.0, see [`LICENSE`](LICENSE).
 
-<sub>"640K ought to be enough for anyone": a quote nobody can source. The inbound mail limit here is 2 MB, about 3.2 times that.</sub>
+<details>
+<summary>⌂</summary>
+
+```mermaid
+sequenceDiagram
+  participant P as Portal alert
+  participant H as 🐇 You + Casa No Pasa
+  participant R as 63 other renters
+  participant A as Agency
+  P->>H: 09:00:00 new flat in Gràcia
+  P->>R: 09:00:00 new flat in Gràcia
+  H->>A: 09:00:41 reply in Spanish, tenant file link
+  A-->>H: Visit Tuesday 18:30?
+  R->>A: 09:14 Hi, is it still available?
+  A-->>R: Visits are full.
+```
+
+</details>
 
 <sub>Built by <a href="https://github.com/zaitsew">zaitsew</a> with a fleet of AI agents.</sub>
 
